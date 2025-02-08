@@ -1,4 +1,6 @@
-#include <stdint.h>
+#pragma once
+#include <Arduino.h>
+#include <cstdint>
 
 // Paramètres WiFi
 struct Config {
