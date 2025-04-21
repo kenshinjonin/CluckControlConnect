@@ -1,5 +1,16 @@
-// CluckControl Connect © 2025 - Auteur : Kenshinjonin
-// Licence : MIT
+/*
+ * CluckControl Connect © 2025 - Auteur : Kenshinjonin
+ * Licence : MIT
+ *
+ * mqtt_manager.cpp
+ * ----------------
+ * Gère la communication MQTT du système :
+ *   - Connexion et reconnexion au broker MQTT
+ *   - Publication des états (porte, capteurs, RSSI, etc.)
+ *   - Souscription aux commandes (ouvrir, fermer, stop)
+ *   - Publication automatique de la configuration Home Assistant (MQTT Discovery)
+ *   - Tâche FreeRTOS pour la gestion asynchrone
+ */
 
 #ifndef MQTT_MANAGER_H
 #define MQTT_MANAGER_H
@@ -9,9 +20,11 @@
 #include "config.h"
 #include "secrets.h"
 
+// --- Définition des clients MQTT et WiFi ---
 WiFiClient espClient;
 PubSubClient mqttClient(espClient);
 
+// --- Topics MQTT utilisés ---
 const char* mqtt_server = SECRET_MQTT_SERVER;
 const char* mqtt_user = SECRET_MQTT_USER;
 const char* mqtt_pass = SECRET_MQTT_PASS;
@@ -29,6 +42,7 @@ const char* topic_uptime = "poulailler/uptime";
 const char* topic_last_event = "poulailler/door/last_event";
 const char* topic_alert = "poulailler/alert";
 
+// --- Classe de gestion MQTT ---
 class MQTTManager {
 public:
     static void init();
@@ -41,6 +55,7 @@ public:
     static void publishTopic(const char* logicalTopic, const char* value);
 };
 
+// --- Tâche FreeRTOS pour la gestion MQTT asynchrone ---
 void MQTTManager::mqttTask(void *parameter) {
     for (;;) {
         MQTTManager::loop();
@@ -59,6 +74,7 @@ void MQTTManager::mqttTask(void *parameter) {
     }
 }
 
+// --- Reconnexion automatique au broker MQTT ---
 void MQTTManager::reconnect() {
     while (!mqttClient.connected()) {
         if (mqttClient.connect("PoulaillerClient", mqtt_user, mqtt_pass)) {
@@ -70,6 +86,7 @@ void MQTTManager::reconnect() {
     }
 }
 
+// --- Publication de la configuration Home Assistant (MQTT Discovery) ---
 void MQTTManager::publishHADiscovery() {
     // Device info commun à toutes les entités
     String device = "\"identifiers\":[\"poulailler_esp32_001\"],\"name\":\"Poulailler ESP32\",\"manufacturer\":\"DIY\",\"model\":\"ESP32 Poulailler\",\"sw_version\":\"1.0.0\"";
@@ -167,6 +184,7 @@ void MQTTManager::publishHADiscovery() {
     mqttClient.publish("homeassistant/sensor/poulailler_alert/config", configAlert.c_str(), true);
 }
 
+// --- Publication d'un topic logique (mapping) ---
 void MQTTManager::publishTopic(const char* logicalTopic, const char* value) {
     const char* topic = nullptr;
     if (strcmp(logicalTopic, "topic_limit_switch_upper") == 0) topic = topic_limit_switch_upper;

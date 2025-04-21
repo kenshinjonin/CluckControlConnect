@@ -1,24 +1,39 @@
-// CluckControl Connect © 2025 - Auteur : Kenshinjonin
-// Licence : MIT
+/*
+ * CluckControl Connect © 2025 - Auteur : Kenshinjonin
+ * Licence : MIT
+ *
+ * config.cpp
+ * -------------
+ * Initialise la structure globale de configuration du système (config).
+ *   - Centralise toutes les valeurs de configuration matérielle, réseau, géographique et horaire.
+ *   - Facilite la maintenance et l'adaptation à un autre matériel ou site.
+ */
 
 #include "config.h"
 
 Config config = {
-    .ssid = "SSID",
-    .password = "PASSWORD",
-    .latitude = 46.308352907180954,
-    .longitude = 4.887889949495334,
-    .UTC_OFFSET = 1,
-    .buttonPinNumber = 2,
-    .motorEnablePinNumber = 4,
-    .motorInput1PinNumber = 5,
-    .motorInput2PinNumber = 6,
-    .upperLimitSwitchPinNumber = 7,
-    .lowerLimitSwitchPinNumber = 8,
-    .buttonDebounceDelay = 500,
-    .maxDoorMovementDuration = 22000,
-    .DST_START_MONTH = 3,
-    .DST_END_MONTH = 10,
-    .DST_CHANGE_DAY = 25
+    // === Identifiants WiFi ===
+    .ssid = "SSID",                  // SSID du réseau WiFi (à personnaliser)
+    .password = "PASSWORD",          // Mot de passe WiFi (à personnaliser)
+
+    // === Paramètres géographiques ===
+    .latitude = SECRET_LATITUDE,      // Latitude du poulailler (depuis secrets.h)
+    .longitude = SECRET_LONGITUDE,    // Longitude du poulailler (depuis secrets.h)
+    .UTC_OFFSET = 1,                  // Décalage horaire UTC (ex: 1 pour UTC+1)
+
+    // === Brochage matériel ===
+    .buttonPinNumber = 2,             // Broche du bouton poussoir
+    .motorEnablePinNumber = 4,        // Broche Enable du moteur
+    .motorInput1PinNumber = 5,        // Broche IN1 du moteur
+    .motorInput2PinNumber = 6,        // Broche IN2 du moteur
+    .upperLimitSwitchPinNumber = 7,   // Fin de course haut
+    .lowerLimitSwitchPinNumber = 8,   // Fin de course bas
+
+    // === Paramètres de temporisation ===
+    .buttonDebounceDelay = 500,       // Anti-rebond bouton (ms)
+    .maxDoorMovementDuration = 22000, // Durée max mouvement porte (ms)
+
+    // === Paramètres heure d'été (DST) ===
+    .DST_START_MONTH = SECRET_DST_START_MONTH, // Mois de début de l'heure d'été
+    .DST_END_MONTH = SECRET_DST_END_MONTH,     // Mois de fin de l'heure d'été
 };
-// ...existing code...

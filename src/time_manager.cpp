@@ -1,18 +1,31 @@
-// CluckControl Connect © 2025 - Auteur : Kenshinjonin
-// Licence : MIT
+/*
+ * CluckControl Connect © 2025 - Auteur : Kenshinjonin
+ * Licence : MIT
+ *
+ * time_manager.cpp
+ * ---------------
+ * Gère la synchronisation et la gestion du temps :
+ *   - Initialisation RTC/NTP
+ *   - Calcul automatique du lever/coucher du soleil (Dusk2Dawn)
+ *   - Prise en compte de l'heure d'été (DST)
+ *   - Tâches FreeRTOS pour la mise à jour de l'heure et du lever/coucher
+ *   - Fournit des getters pour l'heure courante, lever, coucher
+ */
 
+#include "config.h"
 #include "time_manager.h"
 #include <WiFiUdp.h>
 
 WiFiUDP ntpUDP;
 RTC_DS3231 TimeManager::rtc;
-NTPClient TimeManager::timeClient(ntpUDP, "pool.ntp.org", UTC_OFFSET * 3600);
-Dusk2Dawn TimeManager::d2d(latitude, longitude, UTC_OFFSET);
+NTPClient TimeManager::timeClient(ntpUDP, "pool.ntp.org", config.UTC_OFFSET * 3600);
+Dusk2Dawn TimeManager::d2d(config.latitude, config.longitude, config.UTC_OFFSET);
 
-// Variables statiques pour stocker les horaires
+// --- Variables statiques pour stocker les horaires ---
 int TimeManager::sunriseMinutes = 0;
 int TimeManager::sunsetMinutes = 0;
 
+// --- Initialisation du module temps (RTC/NTP, calcul lever/coucher) ---
 void TimeManager::init() {
     if (!rtc.begin()) {
         Serial.println("RTC non trouvé");
@@ -29,6 +42,7 @@ void TimeManager::init() {
     calculateSunriseSunset();
 }
 
+// --- Calcul du lever et coucher du soleil (avec ajustement DST) ---
 void TimeManager::calculateSunriseSunset() {
     DateTime now = rtc.now();
     
@@ -53,24 +67,25 @@ void TimeManager::calculateSunriseSunset() {
     Serial.println(sunsetTime);
 }
 
+// --- Détermination si une date est en heure d'été (DST) ---
 bool TimeManager::isDST(DateTime date) {
-    if (date.month() < DST_START_MONTH || date.month() > DST_END_MONTH) {
+    if (date.month() < config.DST_START_MONTH || date.month() > config.DST_END_MONTH) {
         return false;
     }
-    if (date.month() > DST_START_MONTH && date.month() < DST_END_MONTH) {
+    if (date.month() > config.DST_START_MONTH && date.month() < config.DST_END_MONTH) {
         return true;
     }
     
-    int lastSunday = DST_CHANGE_DAY - date.dayOfTheWeek();
+    int lastSunday = 31 - date.dayOfTheWeek();
     
-    if (date.month() == DST_START_MONTH) {
+    if (date.month() == config.DST_START_MONTH) {
         return date.day() >= lastSunday;
     } else {
         return date.day() < lastSunday;
     }
 }
 
-// Getters pour les horaires
+// --- Getters pour les horaires de lever/coucher ---
 int TimeManager::getSunriseMinutes() {
     return sunriseMinutes;
 }
@@ -79,12 +94,13 @@ int TimeManager::getSunsetMinutes() {
     return sunsetMinutes;
 }
 
-// Méthode pour obtenir l'heure actuelle en minutes depuis minuit
+// --- Obtenir l'heure actuelle en minutes depuis minuit ---
 int TimeManager::getCurrentTimeMinutes() {
     DateTime now = rtc.now();
     return now.hour() * 60 + now.minute();
 }
 
+// --- Mise à jour de l'heure RTC depuis NTP ---
 bool TimeManager::updateRTCTime() {
     if (timeClient.update()) {
         time_t epochTime = timeClient.getEpochTime();
@@ -94,6 +110,7 @@ bool TimeManager::updateRTCTime() {
     return false;
 }
 
+// --- Tâche FreeRTOS : mise à jour périodique de l'heure RTC ---
 void TimeManager::updateTimeTask(void *parameter) {
     for(;;) {
         updateRTCTime();
@@ -101,6 +118,7 @@ void TimeManager::updateTimeTask(void *parameter) {
     }
 }
 
+// --- Tâche FreeRTOS : calcul quotidien lever/coucher du soleil ---
 void TimeManager::calculateSunriseSunsetTask(void *parameter) {
     for(;;) {
         calculateSunriseSunset();
@@ -108,6 +126,7 @@ void TimeManager::calculateSunriseSunsetTask(void *parameter) {
     }
 }
 
+// --- Formatage d'un horaire (minutes -> HH:MM) ---
 void TimeManager::formatTime(int timeInMinutes, char *buffer) {
     int hours = timeInMinutes / 60;
     int minutes = timeInMinutes % 60;

@@ -1,5 +1,16 @@
-// CluckControl Connect © 2025 - Auteur : Kenshinjonin
-// Licence : MIT
+/*
+ * CluckControl Connect © 2025 - Auteur : Kenshinjonin
+ * Licence : MIT
+ *
+ * web_server.cpp
+ * --------------
+ * Gère l'interface web embarquée du système :
+ *   - Authentification HTTP basique (login/mot de passe)
+ *   - Définition des routes (page principale, API JSON, commandes)
+ *   - Génération de l'interface HTML
+ *   - Intégration ElegantOTA pour mises à jour à distance
+ *   - Publication d'informations système (état, position, RSSI, etc.)
+ */
 
 #include "web_server.h"
 #include <ElegantOTA.h>
@@ -11,13 +22,16 @@
 #include "mqtt_manager.h"
 #include "door_controller.h"
 #include "time_manager.h"
+#include "config.h"
 
 namespace {
+// --- Paramètres d'authentification ---
 const char* www_username = SECRET_WEB_USER;
 const char* www_password = SECRET_WEB_PASS;
 const int MAX_LOGIN_ATTEMPTS = 5;
 int loginAttempts = 0;
 
+// --- Vérification de l'authentification HTTP basique ---
 bool isAuthenticated(WebServer& server) {
     if (loginAttempts >= MAX_LOGIN_ATTEMPTS) {
         server.send(403, "text/plain", "Trop de tentatives. Accès bloqué.");
@@ -46,6 +60,7 @@ bool isAuthenticated(WebServer& server) {
 
 WebServer WebServerManager::server(80);
 
+// --- Initialisation du serveur web et des routes ---
 void WebServerManager::init() {
     server.begin();
     setupRoutes();
@@ -53,10 +68,12 @@ void WebServerManager::init() {
     server.enableCORS(true);
 }
 
+// --- Gestion des requêtes entrantes ---
 void WebServerManager::handleClient() {
     server.handleClient();
 }
 
+// --- Définition des routes HTTP ---
 void WebServerManager::setupRoutes() {
     server.on("/", HTTP_GET, []() {
         if (!isAuthenticated(server)) return;
@@ -74,14 +91,14 @@ void WebServerManager::setupRoutes() {
         // État de la porte
         String doorState = DoorController::getIsDoorMoving() ? "MOVING" : "STOPPED";
         // Position
-        int upper = digitalRead(upperLimitSwitchPinNumber);
-        int lower = digitalRead(lowerLimitSwitchPinNumber);
+        int upper = digitalRead(config.upperLimitSwitchPinNumber);
+        int lower = digitalRead(config.lowerLimitSwitchPinNumber);
         String doorPosition = upper == LOW ? "OPEN" : (lower == LOW ? "CLOSED" : "UNKNOWN");
         // Fins de course
         String limitUpper = upper == LOW ? "ON" : "OFF";
         String limitLower = lower == LOW ? "ON" : "OFF";
         // Bouton poussoir
-        int buttonState = digitalRead(buttonPinNumber);
+        int buttonState = digitalRead(config.buttonPinNumber);
         String button = buttonState == LOW ? "ON" : "OFF";
         // Dernier événement (à améliorer si besoin)
         String lastEvent = "-";
@@ -112,6 +129,7 @@ void WebServerManager::setupRoutes() {
     });
 }
 
+// --- Génération de la page HTML principale ---
 String WebServerManager::generateHtmlResponse() {
     String html = "<!DOCTYPE html><html><head>";
     html += "<meta name='viewport' content='width=device-width, initial-scale=1'>";

@@ -1,19 +1,25 @@
-// CluckControl Connect © 2025 - Auteur : Kenshinjonin
-// Licence : MIT
+/*
+ * CluckControl Connect © 2025 - Auteur : Kenshinjonin
+ * Licence : MIT
+ *
+ * web_server.h
+ * ------------
+ * Déclaration de la classe WebServerManager pour la gestion de l'interface web :
+ *   - Initialisation du serveur web
+ *   - Définition des routes et authentification
+ *   - Génération de la page HTML
+ *   - Tâche de gestion des requêtes
+ */
 
 #pragma once
 
-#include <Arduino.h>
 #include <WebServer.h>
-#include <ElegantOTA.h>
 
 class WebServerManager {
 public:
     static void init();
-    static void setupRoutes();
     static void handleClient();
-    
-private:
-    static WebServer server;
+    static void setupRoutes();
     static String generateHtmlResponse();
+    static WebServer server;
 };

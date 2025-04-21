@@ -1,51 +1,50 @@
-// CluckControl Connect © 2025 - Auteur : Kenshinjonin
-// Licence : MIT
+/*
+ * CluckControl Connect © 2025 - Auteur : Kenshinjonin
+ * Licence : MIT
+ *
+ * config.h
+ * --------
+ * Structure de configuration principale du système :
+ *   - Paramètres WiFi
+ *   - Paramètres géographiques
+ *   - Brochage matériel
+ *   - Paramètres de temporisation
+ *   - Paramètres heure d'été (DST)
+ */
 
 #pragma once
 
 #include <Arduino.h>
 #include <cstdint>
+#include "secrets.h"
 
-// Paramètres WiFi
+// Structure de configuration principale du système
 struct Config {
-    const char *ssid;
-    const char *password;
-    double latitude;
-    double longitude;
-    int UTC_OFFSET;
-    uint8_t buttonPinNumber;
-    uint8_t motorEnablePinNumber;
-    uint8_t motorInput1PinNumber;
-    uint8_t motorInput2PinNumber;
-    uint8_t upperLimitSwitchPinNumber;
-    uint8_t lowerLimitSwitchPinNumber;
-    unsigned long buttonDebounceDelay;
-    unsigned long maxDoorMovementDuration;
-    int DST_START_MONTH;
-    int DST_END_MONTH;
-    int DST_CHANGE_DAY;
+    // Identifiants WiFi
+    const char *ssid;                // SSID du réseau WiFi
+    const char *password;            // Mot de passe WiFi
+
+    // Paramètres géographiques
+    double latitude;                 // Latitude du poulailler
+    double longitude;                // Longitude du poulailler
+    int UTC_OFFSET;                  // Décalage horaire par rapport à UTC (ex: 1 pour UTC+1)
+
+    // Brochage matériel
+    uint8_t buttonPinNumber;         // Broche du bouton poussoir
+    uint8_t motorEnablePinNumber;    // Broche Enable du moteur
+    uint8_t motorInput1PinNumber;    // Broche IN1 du moteur
+    uint8_t motorInput2PinNumber;    // Broche IN2 du moteur
+    uint8_t upperLimitSwitchPinNumber; // Fin de course haut
+    uint8_t lowerLimitSwitchPinNumber; // Fin de course bas
+
+    // Paramètres de temporisation
+    unsigned long buttonDebounceDelay;      // Anti-rebond bouton (ms)
+    unsigned long maxDoorMovementDuration;  // Durée max mouvement porte (ms)
+
+    // Paramètres heure d'été (DST)
+    int DST_START_MONTH;            // Mois de début de l'heure d'été
+    int DST_END_MONTH;              // Mois de fin de l'heure d'été
 };
 
+// Déclaration de la variable globale de configuration
 extern Config config;
-
-// Paramètres géographiques
-const double latitude = 46.308352907180954;
-const double longitude = 4.887889949495334;
-int UTC_OFFSET = 1;
-
-// Paramètres des broches
-const uint8_t buttonPinNumber = 2;
-const uint8_t motorEnablePinNumber = 4;
-const uint8_t motorInput1PinNumber = 5;
-const uint8_t motorInput2PinNumber = 6;
-const uint8_t upperLimitSwitchPinNumber = 7;
-const uint8_t lowerLimitSwitchPinNumber = 8;
-
-// Paramètres de temps
-const unsigned long buttonDebounceDelay = 500;
-const unsigned long maxDoorMovementDuration = 22000;
-
-// Paramètres DST
-const int DST_START_MONTH = 3;
-const int DST_END_MONTH = 10;
-const int DST_CHANGE_DAY = 25;

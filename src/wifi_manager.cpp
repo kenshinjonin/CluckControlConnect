@@ -1,11 +1,21 @@
-// CluckControl Connect © 2025 - Auteur : Kenshinjonin
-// Licence : MIT
+/*
+ * CluckControl Connect © 2025 - Auteur : Kenshinjonin
+ * Licence : MIT
+ *
+ * wifi_manager.cpp
+ * ----------------
+ * Gère la connexion WiFi du système :
+ *   - Connexion initiale au réseau WiFi
+ *   - Affichage du RSSI (force du signal)
+ *   - Tâche FreeRTOS pour la reconnexion automatique en cas de perte
+ */
 
 #include "wifi_manager.h"
 #include "config.h"
 
 WiFiClient WiFiManager::wifiClient;
 
+// --- Connexion initiale au réseau WiFi ---
 bool WiFiManager::connect() {
     WiFi.begin(config.ssid, config.password);
     Serial.print("Connexion au WiFi");
@@ -28,11 +38,13 @@ bool WiFiManager::connect() {
     return false;
 }
 
+// --- Affichage du RSSI WiFi sur le port série ---
 void WiFiManager::printRSSI() {
     Serial.print("Force du signal (RSSI): ");
     Serial.println(WiFi.RSSI());
 }
 
+// --- Tâche FreeRTOS : reconnexion automatique au WiFi ---
 void WiFiManager::reconnectTask(void *pvParameters) {
     for(;;) {
         if (WiFi.status() != WL_CONNECTED) {

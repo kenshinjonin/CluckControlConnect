@@ -1,5 +1,16 @@
-// CluckControl Connect © 2025 - Auteur : Kenshinjonin
-// Licence : MIT
+/*
+ * CluckControl Connect © 2025 - Auteur : Kenshinjonin
+ * Licence : MIT
+ *
+ * door_controller.cpp
+ * -------------------
+ * Gère le contrôle de la porte automatique du poulailler :
+ *   - Initialisation du matériel (broches, moteurs, fins de course)
+ *   - Commandes d'ouverture, fermeture, arrêt
+ *   - Gestion du bouton poussoir
+ *   - Publication des états sur MQTT
+ *   - Tâches FreeRTOS pour l'ouverture/fermeture automatique selon le lever/coucher du soleil
+ */
 
 #include "door_controller.h"
 #include "config.h"
@@ -7,7 +18,7 @@
 #include "time_manager.h"
 #include "mqtt_manager.h"
 
-// Variables d'état précédentes pour détection de changement
+// --- Variables d'état internes ---
 static int prevUpperLimit = -1;
 static int prevLowerLimit = -1;
 static int prevButtonState = -1;
@@ -17,10 +28,11 @@ bool DoorController::isDoorMoving = false;
 bool DoorController::previousDoorDirectionUp = true;
 unsigned long DoorController::lastButtonPressTimestamp = 0;
 
+// --- Publication MQTT de tous les états de la porte ---
 void publishAllDoorStates() {
     // Fins de course
-    int upper = digitalRead(upperLimitSwitchPinNumber);
-    int lower = digitalRead(lowerLimitSwitchPinNumber);
+    int upper = digitalRead(config.upperLimitSwitchPinNumber);
+    int lower = digitalRead(config.lowerLimitSwitchPinNumber);
     if (upper != prevUpperLimit) {
         MQTTManager::publishTopic("topic_limit_switch_upper", upper == LOW ? "ON" : "OFF");
         prevUpperLimit = upper;
@@ -37,22 +49,24 @@ void publishAllDoorStates() {
     }
 }
 
+// --- Initialisation du contrôleur de porte ---
 void DoorController::init() {
-    pinMode(buttonPinNumber, INPUT_PULLUP);
-    pinMode(motorEnablePinNumber, OUTPUT);
-    pinMode(motorInput1PinNumber, OUTPUT);
-    pinMode(motorInput2PinNumber, OUTPUT);
-    pinMode(upperLimitSwitchPinNumber, INPUT_PULLUP);
-    pinMode(lowerLimitSwitchPinNumber, INPUT_PULLUP);
+    pinMode(config.buttonPinNumber, INPUT_PULLUP);
+    pinMode(config.motorEnablePinNumber, OUTPUT);
+    pinMode(config.motorInput1PinNumber, OUTPUT);
+    pinMode(config.motorInput2PinNumber, OUTPUT);
+    pinMode(config.upperLimitSwitchPinNumber, INPUT_PULLUP);
+    pinMode(config.lowerLimitSwitchPinNumber, INPUT_PULLUP);
     
     stop();
 }
 
+// --- Commande d'ouverture de la porte ---
 void DoorController::open() {
     if (!isDoorMoving) {
-        digitalWrite(motorInput1PinNumber, HIGH);
-        digitalWrite(motorInput2PinNumber, LOW);
-        digitalWrite(motorEnablePinNumber, HIGH);
+        digitalWrite(config.motorInput1PinNumber, HIGH);
+        digitalWrite(config.motorInput2PinNumber, LOW);
+        digitalWrite(config.motorEnablePinNumber, HIGH);
         isDoorMoving = true;
         previousDoorDirectionUp = true;
         MQTTManager::publishDoorState("OPEN");
@@ -61,11 +75,12 @@ void DoorController::open() {
     }
 }
 
+// --- Commande de fermeture de la porte ---
 void DoorController::close() {
     if (!isDoorMoving) {
-        digitalWrite(motorInput1PinNumber, LOW);
-        digitalWrite(motorInput2PinNumber, HIGH);
-        digitalWrite(motorEnablePinNumber, HIGH);
+        digitalWrite(config.motorInput1PinNumber, LOW);
+        digitalWrite(config.motorInput2PinNumber, HIGH);
+        digitalWrite(config.motorEnablePinNumber, HIGH);
         isDoorMoving = true;
         previousDoorDirectionUp = false;
         MQTTManager::publishDoorState("CLOSE");
@@ -74,33 +89,35 @@ void DoorController::close() {
     }
 }
 
+// --- Arrêt du moteur de la porte ---
 void DoorController::stop() {
-    digitalWrite(motorInput1PinNumber, LOW);
-    digitalWrite(motorInput2PinNumber, LOW);
-    digitalWrite(motorEnablePinNumber, LOW);
+    digitalWrite(config.motorInput1PinNumber, LOW);
+    digitalWrite(config.motorInput2PinNumber, LOW);
+    digitalWrite(config.motorEnablePinNumber, LOW);
     isDoorMoving = false;
     MQTTManager::publishDoorState("STOP");
     MQTTManager::publishTopic("topic_last_event", "STOP");
     publishAllDoorStates();
 }
 
+// --- Gestion du bouton poussoir (anti-rebond, logique d'ouverture/fermeture) ---
 void DoorController::handleButtonPress() {
-    int buttonState = digitalRead(buttonPinNumber);
+    int buttonState = digitalRead(config.buttonPinNumber);
     if (buttonState != prevButtonState) {
         MQTTManager::publishTopic("topic_button", buttonState == LOW ? "ON" : "OFF");
         prevButtonState = buttonState;
     }
-    if (buttonState == LOW && millis() - lastButtonPressTimestamp >= buttonDebounceDelay) {
+    if (buttonState == LOW && millis() - lastButtonPressTimestamp >= config.buttonDebounceDelay) {
         lastButtonPressTimestamp = millis();
         Serial.println("Appui sur le bouton détecté");
         if (!isDoorMoving) {
-            bool motorInput1State = digitalRead(motorInput1PinNumber);
-            bool motorInput2State = digitalRead(motorInput2PinNumber);
+            bool motorInput1State = digitalRead(config.motorInput1PinNumber);
+            bool motorInput2State = digitalRead(config.motorInput2PinNumber);
             if (motorInput1State || motorInput2State) {
                 stop();
             } else {
-                bool upperLimitActive = digitalRead(upperLimitSwitchPinNumber) == LOW;
-                bool lowerLimitActive = digitalRead(lowerLimitSwitchPinNumber) == LOW;
+                bool upperLimitActive = digitalRead(config.upperLimitSwitchPinNumber) == LOW;
+                bool lowerLimitActive = digitalRead(config.lowerLimitSwitchPinNumber) == LOW;
                 if (upperLimitActive && lowerLimitActive) {
                     previousDoorDirectionUp ? close() : open();
                 } else if (upperLimitActive) {
@@ -114,6 +131,7 @@ void DoorController::handleButtonPress() {
     publishAllDoorStates();
 }
 
+// --- Tâche FreeRTOS : ouverture automatique au lever du soleil ---
 void DoorController::openDoorTask(void *parameter) {
     for(;;) {
         int currentTime = TimeManager::getCurrentTimeMinutes();
@@ -128,6 +146,7 @@ void DoorController::openDoorTask(void *parameter) {
     }
 }
 
+// --- Tâche FreeRTOS : fermeture automatique au coucher du soleil ---
 void DoorController::closeDoorTask(void *parameter) {
     for(;;) {
         int currentTime = TimeManager::getCurrentTimeMinutes();
@@ -142,6 +161,7 @@ void DoorController::closeDoorTask(void *parameter) {
     }
 }
 
+// --- Tâche FreeRTOS : gestion du bouton poussoir ---
 void DoorController::buttonTask(void *parameter) {
     for(;;) {
         handleButtonPress();
