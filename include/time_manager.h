@@ -1,3 +1,6 @@
+// CluckControl Connect © 2025 - Auteur : Kenshinjonin
+// Licence : MIT
+
 #include <NTPClient.h>
 #include <RTClib.h>
 #include <Timezone.h>
@@ -27,4 +30,4 @@ private:
     
     static void formatTime(int time, char *buffer);
     static bool isDST(DateTime date);
-}; 
+};

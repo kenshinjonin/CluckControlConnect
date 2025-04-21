@@ -1,3 +1,6 @@
+// CluckControl Connect © 2025 - Auteur : Kenshinjonin
+// Licence : MIT
+
 #pragma once
 
 class DoorController {
@@ -10,9 +13,10 @@ public:
     static void openDoorTask(void *parameter);
     static void closeDoorTask(void *parameter);
     static void buttonTask(void *parameter);
+    static bool getIsDoorMoving() { return isDoorMoving; }
     
 private:
     static bool isDoorMoving;
     static bool previousDoorDirectionUp;
     static unsigned long lastButtonPressTimestamp;
-}; 
+};

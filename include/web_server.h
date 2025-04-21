@@ -1,3 +1,6 @@
+// CluckControl Connect © 2025 - Auteur : Kenshinjonin
+// Licence : MIT
+
 #pragma once
 
 #include <Arduino.h>
@@ -13,4 +16,4 @@ public:
 private:
     static WebServer server;
     static String generateHtmlResponse();
-}; 
+};

@@ -1,3 +1,6 @@
+// CluckControl Connect © 2025 - Auteur : Kenshinjonin
+// Licence : MIT
+
 #include "config.h"
 
 Config config = {

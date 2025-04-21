@@ -1,3 +1,6 @@
+// CluckControl Connect © 2025 - Auteur : Kenshinjonin
+// Licence : MIT
+
 #include <WiFi.h>
 #include "config.h"
 
@@ -8,4 +11,4 @@ public:
     static void reconnectTask(void *pvParameters);
 private:
     static WiFiClient wifiClient;
-}; 
+};
