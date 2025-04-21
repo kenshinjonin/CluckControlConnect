@@ -1,3 +1,5 @@
+🇬🇧 **English version**
+
 # CluckControl Connect
 *CluckControl Connect – Automation and peace of mind for your chicken coop!*
 
@@ -62,6 +64,12 @@ Kenshinjonin – 2025
 *CluckControl Connect – Automation and peace of mind for your chicken coop!*
 
 ---
+
+<hr style="border: 2px solid #444; margin: 32px 0;">
+
+---
+
+🇫🇷 **Version française**
 
 # CluckControl Connect
 *CluckControl Connect – Automatisation et sérénité pour votre poulailler !*
