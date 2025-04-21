@@ -1,4 +1,69 @@
 # CluckControl Connect
+*CluckControl Connect – Automation and peace of mind for your chicken coop!*
+
+<p align="center">
+  <img src="CluckControlConnect.png" alt="CluckControl Connect" width="200"/>
+</p>
+
+## Overview
+
+CluckControl Connect is an open source home automation system for automated chicken coop management: automatic door opening/closing based on sunrise/sunset, manual control, safety, remote supervision, Home Assistant integration, OTA updates...
+
+## Required Hardware
+- 1 × ESP32
+- 1 × 12v DC Motor
+- 1 × L298N H-Bridge module
+- 2 × Limit switches (top and bottom, lever type)
+- 1 × Push button (for manual control)
+- 1 × Suitable power supply for ESP32 and the motor
+- 1 × DS3231 RTC module (optional but recommended for time accuracy)
+- 1 × 2.4 GHz WiFi access
+- 1 × Suitable wiring (wires, terminals, etc.)
+- (Optional) 1 × Protective enclosure
+
+## Main Features
+- Automatic sunrise/sunset calculation
+- Manual control via push button or secure web interface
+- Full MQTT integration (states, commands, Home Assistant Discovery)
+- OTA updates
+
+## Installation
+
+### Prerequisites
+- [PlatformIO](https://platformio.org/) (VS Code extension or CLI)
+
+### Deployment
+1. Clone this repository:
+   ```sh
+   git clone https://github.com/kenshinjonin/Poulailler_V2.git
+   ```
+2. Add your WiFi, MQTT, web credentials and GPS coordinates in `include/secrets.h` (see example provided, do not version this file!)
+3. Build and upload the firmware to the ESP32 using PlatformIO
+4. Access the web interface via the ESP32's IP address
+
+## Usage
+- Control and supervision via the secure web interface
+- Automatic integration into Home Assistant via MQTT Discovery
+- MQTT commands: open, close, stop, supervision
+- OTA updates via the web interface
+
+## Wiring Diagram
+*(To be completed with a diagram or photo)*
+
+## License
+
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file.
+
+## Author
+Kenshinjonin – 2025
+
+---
+
+*CluckControl Connect – Automation and peace of mind for your chicken coop!*
+
+---
+
+# CluckControl Connect
 *CluckControl Connect – Automatisation et sérénité pour votre poulailler !*
 
 <p align="center">
