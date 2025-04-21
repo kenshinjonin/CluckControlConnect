@@ -1,4 +1,5 @@
 # CluckControl Connect
+*CluckControl Connect – Automatisation et sérénité pour votre poulailler !*
 
 <p align="center">
   <img src="CluckControlConnect.png" alt="CluckControl Connect" width="200"/>
