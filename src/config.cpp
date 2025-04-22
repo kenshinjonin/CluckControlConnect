@@ -19,7 +19,7 @@ Config config = {
     // === Paramètres géographiques ===
     .latitude = SECRET_LATITUDE,      // Latitude du poulailler (depuis secrets.h)
     .longitude = SECRET_LONGITUDE,    // Longitude du poulailler (depuis secrets.h)
-    .UTC_OFFSET = 1,                  // Décalage horaire UTC (ex: 1 pour UTC+1)
+    .timezoneOffset = SECRET_TIMEZONE_OFFSET, // Fuseau horaire explicite en hiver (ex: 1 pour UTC+1, la logique DST ajoutera +1 l'été)
 
     // === Brochage matériel ===
     .buttonPinNumber = 2,             // Broche du bouton poussoir
@@ -34,6 +34,7 @@ Config config = {
     .maxDoorMovementDuration = 22000, // Durée max mouvement porte (ms)
 
     // === Paramètres heure d'été (DST) ===
+    .dstEnabled = SECRET_DST_ENABLED, // true pour activer l'heure d'été, false sinon
     .DST_START_MONTH = SECRET_DST_START_MONTH, // Mois de début de l'heure d'été
     .DST_END_MONTH = SECRET_DST_END_MONTH,     // Mois de fin de l'heure d'été
 };

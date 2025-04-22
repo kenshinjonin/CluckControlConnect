@@ -18,8 +18,8 @@
 
 WiFiUDP ntpUDP;
 RTC_DS3231 TimeManager::rtc;
-NTPClient TimeManager::timeClient(ntpUDP, "pool.ntp.org", config.UTC_OFFSET * 3600);
-Dusk2Dawn TimeManager::d2d(config.latitude, config.longitude, config.UTC_OFFSET);
+NTPClient TimeManager::timeClient(ntpUDP, "pool.ntp.org", config.timezoneOffset * 3600); // Décalage UTC en hiver, DST ajouté dynamiquement
+Dusk2Dawn TimeManager::d2d(config.latitude, config.longitude, config.timezoneOffset); // Décalage UTC en hiver, DST ajouté dynamiquement
 
 // --- Variables statiques pour stocker les horaires ---
 int TimeManager::sunriseMinutes = 0;
@@ -69,6 +69,7 @@ void TimeManager::calculateSunriseSunset() {
 
 // --- Détermination si une date est en heure d'été (DST) ---
 bool TimeManager::isDST(DateTime date) {
+    if (!config.dstEnabled) return false;
     if (date.month() < config.DST_START_MONTH || date.month() > config.DST_END_MONTH) {
         return false;
     }

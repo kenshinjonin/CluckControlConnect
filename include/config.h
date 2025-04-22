@@ -10,6 +10,7 @@
  *   - Brochage matériel
  *   - Paramètres de temporisation
  *   - Paramètres heure d'été (DST)
+ *
  */
 
 #pragma once
@@ -27,7 +28,7 @@ struct Config {
     // Paramètres géographiques
     double latitude;                 // Latitude du poulailler
     double longitude;                // Longitude du poulailler
-    int UTC_OFFSET;                  // Décalage horaire par rapport à UTC (ex: 1 pour UTC+1)
+    int timezoneOffset;              // Décalage horaire UTC en hiver (ex: 1 pour UTC+1, la logique DST ajoutera +1 l'été)
 
     // Brochage matériel
     uint8_t buttonPinNumber;         // Broche du bouton poussoir
@@ -42,6 +43,7 @@ struct Config {
     unsigned long maxDoorMovementDuration;  // Durée max mouvement porte (ms)
 
     // Paramètres heure d'été (DST)
+    bool dstEnabled;                // true pour activer l'heure d'été, false sinon
     int DST_START_MONTH;            // Mois de début de l'heure d'été
     int DST_END_MONTH;              // Mois de fin de l'heure d'été
 };
