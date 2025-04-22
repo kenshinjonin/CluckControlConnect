@@ -49,9 +49,6 @@ CluckControl Connect is an open source home automation system for automated chic
 - MQTT commands: open, close, stop, supervision
 - OTA updates via the web interface
 
-## Wiring Diagram
-*(To be completed with a diagram or photo)*
-
 ## License
 
 This project is licensed under the MIT License. See the [LICENSE](LICENSE) file.
@@ -60,13 +57,7 @@ This project is licensed under the MIT License. See the [LICENSE](LICENSE) file.
 Kenshinjonin – 2025
 
 ---
-
-*CluckControl Connect – Automation and peace of mind for your chicken coop!*
-
----
-
 <hr style="border: 2px solid #444; margin: 32px 0;">
-
 ---
 
 🇫🇷 **Version française**
@@ -120,9 +111,6 @@ CluckControl Connect est un système domotique open source pour la gestion autom
 - Commandes MQTT : ouvrir, fermer, stop, supervision
 - Mises à jour OTA via l’interface web
 
-## Schéma de câblage
-*(À compléter avec un schéma ou une photo)*
-
 ## Licence
 
 Ce projet est sous licence MIT. Voir le fichier [LICENSE](LICENSE).
@@ -131,5 +119,3 @@ Ce projet est sous licence MIT. Voir le fichier [LICENSE](LICENSE).
 Kenshinjonin – 2025
 
 ---
-
-*CluckControl Connect – Automatisation et sérénité pour votre poulailler !*
