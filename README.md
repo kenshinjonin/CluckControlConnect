@@ -56,9 +56,9 @@ This project is licensed under the MIT License. See the [LICENSE](LICENSE) file.
 ## Author
 Kenshinjonin – 2025
 
----
+
 <hr style="border: 2px solid #444; margin: 32px 0;">
----
+
 
 🇫🇷 **Version française**
 
