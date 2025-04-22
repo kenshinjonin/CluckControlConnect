@@ -11,8 +11,10 @@
  *   - Tâche FreeRTOS pour la gestion asynchrone
  */
 
-#pragma once
+#ifndef MQTT_MANAGER_H
+#define MQTT_MANAGER_H
 
+#include <WiFi.h>
 #include <PubSubClient.h>
 
 class MQTTManager {
@@ -26,3 +28,5 @@ public:
     static void publishHADiscovery();
     static void publishTopic(const char* logicalTopic, const char* value);
 };
+
+#endif // MQTT_MANAGER_H

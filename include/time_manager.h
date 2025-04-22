@@ -16,6 +16,7 @@
 #include <RTClib.h>
 #include <NTPClient.h>
 #include <Dusk2Dawn.h>
+#include <cmath>
 
 class TimeManager {
 public:

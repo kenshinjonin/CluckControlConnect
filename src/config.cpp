@@ -16,6 +16,12 @@ Config config = {
     .ssid = "SSID",                  // SSID du réseau WiFi (à personnaliser)
     .password = "PASSWORD",          // Mot de passe WiFi (à personnaliser)
 
+    // === Paramètres MQTT ===
+    .mqttServer = SECRET_MQTT_SERVER,
+    .mqttPort = 1883,               // Port MQTT par défaut
+    .mqttUser = SECRET_MQTT_USER,
+    .mqttPassword = SECRET_MQTT_PASS,
+
     // === Paramètres géographiques ===
     .latitude = SECRET_LATITUDE,      // Latitude du poulailler (depuis secrets.h)
     .longitude = SECRET_LONGITUDE,    // Longitude du poulailler (depuis secrets.h)

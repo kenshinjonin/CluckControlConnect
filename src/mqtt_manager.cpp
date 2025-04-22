@@ -1,70 +1,78 @@
-/*
- * CluckControl Connect © 2025 - Auteur : Kenshinjonin
- * Licence : MIT
- *
- * mqtt_manager.cpp
- * ----------------
- * Gère la communication MQTT du système :
- *   - Connexion et reconnexion au broker MQTT
- *   - Publication des états (porte, capteurs, RSSI, etc.)
- *   - Souscription aux commandes (ouvrir, fermer, stop)
- *   - Publication automatique de la configuration Home Assistant (MQTT Discovery)
- *   - Tâche FreeRTOS pour la gestion asynchrone
- */
-
-#ifndef MQTT_MANAGER_H
-#define MQTT_MANAGER_H
-
-#include <WiFi.h>
-#include <PubSubClient.h>
+#include "mqtt_manager.h"
 #include "config.h"
-#include "secrets.h"
+#include "door_controller.h"
 
-// --- Définition des clients MQTT et WiFi ---
-WiFiClient espClient;
-PubSubClient mqttClient(espClient);
+// Clients MQTT et WiFi
+static WiFiClient espClient;
+static PubSubClient mqttClient(espClient);
 
-// --- Topics MQTT utilisés ---
-const char* mqtt_server = SECRET_MQTT_SERVER;
-const char* mqtt_user = SECRET_MQTT_USER;
-const char* mqtt_pass = SECRET_MQTT_PASS;
-const char* topic_state = "poulailler/door/state";
-const char* topic_cmd = "poulailler/door/cmd";
-const char* topic_status = "poulailler/status";
-const char* topic_log = "poulailler/log";
-const char* topic_time = "poulailler/time";
-const char* topic_wifi = "poulailler/wifi/rssi";
-const char* topic_door_position = "poulailler/door/position";
-const char* topic_limit_switch_upper = "poulailler/door/limit_switch_upper";
-const char* topic_limit_switch_lower = "poulailler/door/limit_switch_lower";
-const char* topic_button = "poulailler/button/state";
-const char* topic_uptime = "poulailler/uptime";
-const char* topic_last_event = "poulailler/door/last_event";
-const char* topic_alert = "poulailler/alert";
+// Topics MQTT
+static const char* topic_state = "poulailler/door/state";
+static const char* topic_cmd = "poulailler/door/cmd";
+static const char* topic_status = "poulailler/status";
+static const char* topic_log = "poulailler/log";
+static const char* topic_wifi = "poulailler/wifi/rssi";
+static const char* topic_door_position = "poulailler/door/position";
+static const char* topic_limit_switch_upper = "poulailler/door/limit_switch_upper";
+static const char* topic_limit_switch_lower = "poulailler/door/limit_switch_lower";
+static const char* topic_button = "poulailler/button/state";
+static const char* topic_uptime = "poulailler/uptime";
+static const char* topic_last_event = "poulailler/door/last_event";
+static const char* topic_alert = "poulailler/alert";
 
-// --- Classe de gestion MQTT ---
-class MQTTManager {
-public:
-    static void init();
-    static void loop();
-    static void publishDoorState(const char* state);
-    static void callback(char* topic, byte* payload, unsigned int length);
-    static void reconnect();
-    static void mqttTask(void *parameter);
-    static void publishHADiscovery();
-    static void publishTopic(const char* logicalTopic, const char* value);
-};
+void MQTTManager::init() {
+    mqttClient.setServer(config.mqttServer, config.mqttPort);
+    mqttClient.setCallback(callback);
+    reconnect();
+}
 
-// --- Tâche FreeRTOS pour la gestion MQTT asynchrone ---
+void MQTTManager::loop() {
+    if (!mqttClient.connected()) {
+        reconnect();
+    }
+    mqttClient.loop();
+}
+
+void MQTTManager::publishDoorState(const char* state) {
+    if (mqttClient.connected()) {
+        mqttClient.publish(topic_state, state, true);
+    }
+}
+
+void MQTTManager::callback(char* topic, byte* payload, unsigned int length) {
+    if (strcmp(topic, topic_cmd) == 0) {
+        char command[length + 1];
+        memcpy(command, payload, length);
+        command[length] = '\0';
+
+        if (strcmp(command, "OPEN") == 0) {
+            DoorController::open();
+        }
+        else if (strcmp(command, "CLOSE") == 0) {
+            DoorController::close();
+        }
+        else if (strcmp(command, "STOP") == 0) {
+            DoorController::stop();
+        }
+    }
+}
+
+void MQTTManager::reconnect() {
+    while (!mqttClient.connected()) {
+        if (mqttClient.connect("PoulaillerClient", config.mqttUser, config.mqttPassword)) {
+            mqttClient.subscribe(topic_cmd);
+            publishHADiscovery();
+        } else {
+            delay(5000);
+        }
+    }
+}
+
 void MQTTManager::mqttTask(void *parameter) {
     for (;;) {
-        MQTTManager::loop();
-        // Publier périodiquement l'état de la porte, RSSI, etc.
+        loop();
         static unsigned long lastPublish = 0;
-        if (millis() - lastPublish > 60000) { // toutes les 60 secondes
-            // Publier l'état de la porte (exemple, à adapter selon l'état réel)
-            // MQTTManager::publishDoorState("OPEN"/"CLOSED");
-            // Publier le RSSI WiFi
+        if (millis() - lastPublish > 60000) {
             char rssiStr[8];
             snprintf(rssiStr, sizeof(rssiStr), "%d", WiFi.RSSI());
             mqttClient.publish(topic_wifi, rssiStr, true);
@@ -74,117 +82,16 @@ void MQTTManager::mqttTask(void *parameter) {
     }
 }
 
-// --- Reconnexion automatique au broker MQTT ---
-void MQTTManager::reconnect() {
-    while (!mqttClient.connected()) {
-        if (mqttClient.connect("PoulaillerClient", mqtt_user, mqtt_pass)) {
-            mqttClient.subscribe(topic_cmd);
-            MQTTManager::publishHADiscovery(); // Publie la config Home Assistant à chaque reconnexion
-        } else {
-            delay(5000);
-        }
-    }
-}
-
-// --- Publication de la configuration Home Assistant (MQTT Discovery) ---
 void MQTTManager::publishHADiscovery() {
-    // Device info commun à toutes les entités
     String device = "\"identifiers\":[\"poulailler_esp32_001\"],\"name\":\"Poulailler ESP32\",\"manufacturer\":\"DIY\",\"model\":\"ESP32 Poulailler\",\"sw_version\":\"1.0.0\"";
 
-    // Porte (cover)
-    String configDoor = "{"
-        "\"name\":\"Porte Poulailler\"," 
-        "\"state_topic\":\"poulailler/door/state\"," 
-        "\"command_topic\":\"poulailler/door/cmd\"," 
-        "\"payload_open\":\"OPEN\"," 
-        "\"payload_close\":\"CLOSE\"," 
-        "\"payload_stop\":\"STOP\"," 
-        "\"state_open\":\"OPEN\"," 
-        "\"state_closed\":\"CLOSED\"," 
-        "\"device_class\":\"garage\"," 
-        "\"unique_id\":\"poulailler_door_001\"," 
-        "\"device\":{" + device + "}}";
+    String configDoor = "{\"name\":\"Porte Poulailler\",\"state_topic\":\"poulailler/door/state\",\"command_topic\":\"poulailler/door/cmd\",\"payload_open\":\"OPEN\",\"payload_close\":\"CLOSE\",\"payload_stop\":\"STOP\",\"state_open\":\"OPEN\",\"state_closed\":\"CLOSED\",\"device_class\":\"garage\",\"unique_id\":\"poulailler_door_001\",\"device\":{" + device + "}}";
     mqttClient.publish("homeassistant/cover/poulailler_door/config", configDoor.c_str(), true);
 
-    // RSSI WiFi
-    String configRSSI = "{"
-        "\"name\":\"Poulailler WiFi RSSI\"," 
-        "\"state_topic\":\"poulailler/wifi/rssi\"," 
-        "\"unit_of_measurement\":\"dBm\"," 
-        "\"device_class\":\"signal_strength\"," 
-        "\"unique_id\":\"poulailler_wifi_rssi_001\"," 
-        "\"device\":{" + device + "}}";
+    String configRSSI = "{\"name\":\"Poulailler WiFi RSSI\",\"state_topic\":\"poulailler/wifi/rssi\",\"unit_of_measurement\":\"dBm\",\"device_class\":\"signal_strength\",\"unique_id\":\"poulailler_wifi_rssi_001\",\"device\":{" + device + "}}";
     mqttClient.publish("homeassistant/sensor/poulailler_wifi_rssi/config", configRSSI.c_str(), true);
-
-    // Position de la porte
-    String configPosition = "{"
-        "\"name\":\"Position Porte Poulailler\"," 
-        "\"state_topic\":\"poulailler/door/position\"," 
-        "\"unique_id\":\"poulailler_door_position_001\"," 
-        "\"device_class\":\"enum\"," 
-        "\"icon\":\"mdi:door\"," 
-        "\"device\":{" + device + "}}";
-    mqttClient.publish("homeassistant/sensor/poulailler_door_position/config", configPosition.c_str(), true);
-
-    // Fins de course
-    String configLimitUpper = "{"
-        "\"name\":\"Fin de course haut\"," 
-        "\"state_topic\":\"poulailler/door/limit_switch_upper\"," 
-        "\"unique_id\":\"poulailler_limit_switch_upper_001\"," 
-        "\"device_class\":\"safety\"," 
-        "\"icon\":\"mdi:arrow-up-bold-box\"," 
-        "\"device\":{" + device + "}}";
-    mqttClient.publish("homeassistant/binary_sensor/poulailler_limit_switch_upper/config", configLimitUpper.c_str(), true);
-
-    String configLimitLower = "{"
-        "\"name\":\"Fin de course bas\"," 
-        "\"state_topic\":\"poulailler/door/limit_switch_lower\"," 
-        "\"unique_id\":\"poulailler_limit_switch_lower_001\"," 
-        "\"device_class\":\"safety\"," 
-        "\"icon\":\"mdi:arrow-down-bold-box\"," 
-        "\"device\":{" + device + "}}";
-    mqttClient.publish("homeassistant/binary_sensor/poulailler_limit_switch_lower/config", configLimitLower.c_str(), true);
-
-    // Bouton poussoir
-    String configButton = "{"
-        "\"name\":\"Bouton Porte Poulailler\"," 
-        "\"state_topic\":\"poulailler/button/state\"," 
-        "\"unique_id\":\"poulailler_button_001\"," 
-        "\"device_class\":\"occupancy\"," 
-        "\"icon\":\"mdi:gesture-tap-button\"," 
-        "\"device\":{" + device + "}}";
-    mqttClient.publish("homeassistant/binary_sensor/poulailler_button/config", configButton.c_str(), true);
-
-    // Uptime
-    String configUptime = "{"
-        "\"name\":\"Poulailler Uptime\"," 
-        "\"state_topic\":\"poulailler/uptime\"," 
-        "\"unit_of_measurement\":\"s\"," 
-        "\"icon\":\"mdi:timer-outline\"," 
-        "\"unique_id\":\"poulailler_uptime_001\"," 
-        "\"device\":{" + device + "}}";
-    mqttClient.publish("homeassistant/sensor/poulailler_uptime/config", configUptime.c_str(), true);
-
-    // Dernier événement porte
-    String configLastEvent = "{"
-        "\"name\":\"Dernier événement porte\"," 
-        "\"state_topic\":\"poulailler/door/last_event\"," 
-        "\"icon\":\"mdi:history\"," 
-        "\"unique_id\":\"poulailler_last_event_001\"," 
-        "\"device\":{" + device + "}}";
-    mqttClient.publish("homeassistant/sensor/poulailler_last_event/config", configLastEvent.c_str(), true);
-
-    // Alertes
-    String configAlert = "{"
-        "\"name\":\"Alerte Poulailler\"," 
-        "\"state_topic\":\"poulailler/alert\"," 
-        "\"icon\":\"mdi:alert\"," 
-        "\"unique_id\":\"poulailler_alert_001\"," 
-        "\"device\":{" + device + "}}";
-    mqttClient.publish("homeassistant/sensor/poulailler_alert/config", configAlert.c_str(), true);
 }
 
-// --- Publication d'un topic logique (mapping) ---
 void MQTTManager::publishTopic(const char* logicalTopic, const char* value) {
     const char* topic = nullptr;
     if (strcmp(logicalTopic, "topic_limit_switch_upper") == 0) topic = topic_limit_switch_upper;
@@ -192,8 +99,9 @@ void MQTTManager::publishTopic(const char* logicalTopic, const char* value) {
     else if (strcmp(logicalTopic, "topic_door_position") == 0) topic = topic_door_position;
     else if (strcmp(logicalTopic, "topic_last_event") == 0) topic = topic_last_event;
     else if (strcmp(logicalTopic, "topic_button") == 0) topic = topic_button;
-    else topic = logicalTopic; // fallback: publish on the given string
-    if (topic) mqttClient.publish(topic, value, true);
+    else topic = logicalTopic;
+    
+    if (topic && mqttClient.connected()) {
+        mqttClient.publish(topic, value, true);
+    }
 }
-
-#endif // MQTT_MANAGER_H

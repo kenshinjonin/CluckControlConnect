@@ -6,6 +6,7 @@
  * --------
  * Structure de configuration principale du système :
  *   - Paramètres WiFi
+ *   - Paramètres MQTT
  *   - Paramètres géographiques
  *   - Brochage matériel
  *   - Paramètres de temporisation
@@ -24,6 +25,12 @@ struct Config {
     // Identifiants WiFi
     const char *ssid;                // SSID du réseau WiFi
     const char *password;            // Mot de passe WiFi
+
+    // Paramètres MQTT
+    const char *mqttServer;         // Adresse du serveur MQTT
+    int mqttPort;                   // Port du serveur MQTT
+    const char *mqttUser;           // Nom d'utilisateur MQTT
+    const char *mqttPassword;       // Mot de passe MQTT
 
     // Paramètres géographiques
     double latitude;                 // Latitude du poulailler
