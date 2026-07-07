@@ -12,6 +12,7 @@
 
 #include "wifi_manager.h"
 #include "config.h"
+#include <esp_task_wdt.h>
 
 WiFiClient WiFiManager::wifiClient;
 
@@ -46,7 +47,9 @@ void WiFiManager::printRSSI() {
 
 // --- Tâche FreeRTOS : reconnexion automatique au WiFi ---
 void WiFiManager::reconnectTask(void *pvParameters) {
+    esp_task_wdt_add(NULL); // Tâche surveillée par le watchdog
     for(;;) {
+        esp_task_wdt_reset();
         if (WiFi.status() != WL_CONNECTED) {
             Serial.println("Connexion WiFi perdue. Tentative de reconnexion...");
             if (!connect()) {

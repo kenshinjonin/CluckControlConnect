@@ -16,6 +16,10 @@
 
 #pragma once
 
+// --- Identifiants WiFi (exemple fictif) ---
+#define SECRET_SSID     "MonReseauWiFi"
+#define SECRET_PASSWORD "motdepasse_wifi"
+
 // --- Identifiants MQTT et Web (exemple fictif) ---
 #define SECRET_MQTT_SERVER "192.168.50.200"
 #define SECRET_MQTT_USER   "user_demo"

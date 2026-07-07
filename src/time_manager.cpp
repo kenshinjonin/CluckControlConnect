@@ -4,12 +4,17 @@
  *
  * time_manager.cpp
  * ---------------
- * Gère la synchronisation et la gestion du temps :
+ * Gère la synchronisation et la gestion du temps :
  *   - Initialisation RTC/NTP
  *   - Calcul automatique du lever/coucher du soleil (Dusk2Dawn)
  *   - Prise en compte de l'heure d'été (DST)
  *   - Tâches FreeRTOS pour la mise à jour de l'heure et du lever/coucher
  *   - Fournit des getters pour l'heure courante, lever, coucher
+ *
+ * Convention horaire : la RTC est réglée en heure d'hiver toute l'année
+ * (offset NTP fixe). Le décalage d'été (+60 min) est appliqué de façon
+ * cohérente à la fois aux horaires de lever/coucher et à l'heure courante
+ * retournée par getCurrentTimeMinutes().
  */
 
 #include "config.h"
@@ -28,7 +33,7 @@ int TimeManager::sunsetMinutes = 0;
 // --- Initialisation du module temps (RTC/NTP, calcul lever/coucher) ---
 void TimeManager::init() {
     if (!rtc.begin()) {
-        Serial.println("RTC non trouvé");
+        Serial.println("RTC non trouve");
         return;
     }
 
@@ -45,22 +50,22 @@ void TimeManager::init() {
 // --- Calcul du lever et coucher du soleil (avec ajustement DST) ---
 void TimeManager::calculateSunriseSunset() {
     DateTime now = rtc.now();
-    
-    // Calcul des horaires en minutes depuis minuit
+
+    // Calcul des horaires en minutes depuis minuit (heure d'hiver)
     sunriseMinutes = d2d.sunrise(now.year(), now.month(), now.day(), false);
     sunsetMinutes = d2d.sunset(now.year(), now.month(), now.day(), false);
-    
-    // Ajustement pour l'heure d'été
+
+    // Ajustement pour l'heure d'été (getCurrentTimeMinutes applique le même décalage)
     if (isDST(now)) {
         sunriseMinutes += 60;
         sunsetMinutes += 60;
     }
-    
+
     // Affichage des horaires (pour debug)
     char sunriseTime[6], sunsetTime[6];
     formatTime(sunriseMinutes, sunriseTime);
     formatTime(sunsetMinutes, sunsetTime);
-    
+
     Serial.print("Lever du soleil: ");
     Serial.println(sunriseTime);
     Serial.print("Coucher du soleil: ");
@@ -68,6 +73,8 @@ void TimeManager::calculateSunriseSunset() {
 }
 
 // --- Détermination si une date est en heure d'été (DST) ---
+// Règle européenne approchée : du dernier dimanche du mois de début
+// au dernier dimanche du mois de fin (l'heure exacte du changement est ignorée).
 bool TimeManager::isDST(DateTime date) {
     if (!config.dstEnabled) return false;
     if (date.month() < config.DST_START_MONTH || date.month() > config.DST_END_MONTH) {
@@ -76,9 +83,11 @@ bool TimeManager::isDST(DateTime date) {
     if (date.month() > config.DST_START_MONTH && date.month() < config.DST_END_MONTH) {
         return true;
     }
-    
-    int lastSunday = 31 - date.dayOfTheWeek();
-    
+
+    // Jour de la semaine du 31 du mois courant (mars et octobre ont 31 jours), 0 = dimanche
+    int weekdayOf31 = (date.dayOfTheWeek() + (31 - date.day())) % 7;
+    int lastSunday = 31 - weekdayOf31;
+
     if (date.month() == config.DST_START_MONTH) {
         return date.day() >= lastSunday;
     } else {
@@ -95,10 +104,16 @@ int TimeManager::getSunsetMinutes() {
     return sunsetMinutes;
 }
 
-// --- Obtenir l'heure actuelle en minutes depuis minuit ---
+// --- Obtenir l'heure locale actuelle en minutes depuis minuit ---
+// La RTC est en heure d'hiver : on applique le décalage d'été pour rester
+// cohérent avec les horaires de lever/coucher ajustés dans calculateSunriseSunset().
 int TimeManager::getCurrentTimeMinutes() {
     DateTime now = rtc.now();
-    return now.hour() * 60 + now.minute();
+    int minutes = now.hour() * 60 + now.minute();
+    if (isDST(now)) {
+        minutes += 60;
+    }
+    return minutes % 1440;
 }
 
 // --- Mise à jour de l'heure RTC depuis NTP ---
@@ -111,7 +126,7 @@ bool TimeManager::updateRTCTime() {
     return false;
 }
 
-// --- Tâche FreeRTOS : mise à jour périodique de l'heure RTC ---
+// --- Tâche FreeRTOS : mise à jour périodique de l'heure RTC ---
 void TimeManager::updateTimeTask(void *parameter) {
     for(;;) {
         updateRTCTime();
@@ -119,7 +134,7 @@ void TimeManager::updateTimeTask(void *parameter) {
     }
 }
 
-// --- Tâche FreeRTOS : calcul quotidien lever/coucher du soleil ---
+// --- Tâche FreeRTOS : calcul quotidien lever/coucher du soleil ---
 void TimeManager::calculateSunriseSunsetTask(void *parameter) {
     for(;;) {
         calculateSunriseSunset();

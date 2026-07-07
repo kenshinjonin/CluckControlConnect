@@ -13,8 +13,8 @@
 
 Config config = {
     // === Identifiants WiFi ===
-    .ssid = "SSID",                  // SSID du réseau WiFi (à personnaliser)
-    .password = "PASSWORD",          // Mot de passe WiFi (à personnaliser)
+    .ssid = SECRET_SSID,              // SSID du réseau WiFi (depuis secrets.h)
+    .password = SECRET_PASSWORD,      // Mot de passe WiFi (depuis secrets.h)
 
     // === Paramètres MQTT ===
     .mqttServer = SECRET_MQTT_SERVER,
@@ -28,12 +28,13 @@ Config config = {
     .timezoneOffset = SECRET_TIMEZONE_OFFSET, // Fuseau horaire explicite en hiver (ex: 1 pour UTC+1, la logique DST ajoutera +1 l'été)
 
     // === Brochage matériel ===
-    .buttonPinNumber = 2,             // Broche du bouton poussoir
-    .motorEnablePinNumber = 4,        // Broche Enable du moteur
-    .motorInput1PinNumber = 5,        // Broche IN1 du moteur
-    .motorInput2PinNumber = 6,        // Broche IN2 du moteur
-    .upperLimitSwitchPinNumber = 7,   // Fin de course haut
-    .lowerLimitSwitchPinNumber = 8,   // Fin de course bas
+    // GPIO 6-11 interdits (flash SPI interne) ; 0/2/5/12/15 sont des broches de strapping
+    .buttonPinNumber = 25,            // Broche du bouton poussoir (pull-up interne)
+    .motorEnablePinNumber = 26,       // Broche Enable du moteur
+    .motorInput1PinNumber = 27,       // Broche IN1 du moteur
+    .motorInput2PinNumber = 14,       // Broche IN2 du moteur
+    .upperLimitSwitchPinNumber = 32,  // Fin de course haut (pull-up interne)
+    .lowerLimitSwitchPinNumber = 33,  // Fin de course bas (pull-up interne)
 
     // === Paramètres de temporisation ===
     .buttonDebounceDelay = 500,       // Anti-rebond bouton (ms)

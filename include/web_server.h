@@ -19,6 +19,7 @@ class WebServerManager {
 public:
     static void init();
     static void handleClient();
+    static void webServerTask(void *parameter); // Tâche FreeRTOS : traitement des requêtes web et OTA
     static void setupRoutes();
     static String generateHtmlResponse();
     static WebServer server;

@@ -4,19 +4,21 @@
  *
  * web_server.cpp
  * --------------
- * Gère l'interface web embarquée du système :
- *   - Authentification HTTP basique (login/mot de passe)
+ * Gère l'interface web embarquée du système :
+ *   - Authentification HTTP basique (login/mot de passe) avec limitation
+ *     des tentatives (compteur à expiration, seuls les mauvais mots de
+ *     passe sont comptés)
  *   - Définition des routes (page principale, API JSON, commandes)
  *   - Génération de l'interface HTML
- *   - Intégration ElegantOTA pour mises à jour à distance
+ *   - Intégration ElegantOTA (protégée par la même authentification)
  *   - Publication d'informations système (état, position, RSSI, etc.)
  */
 
 #include "web_server.h"
 #include <ElegantOTA.h>
+#include <esp_task_wdt.h>
 #include <WiFi.h>
 #include <WebServer.h>
-#include <base64.h>
 #include "secrets.h"
 #include <Arduino.h>
 #include "mqtt_manager.h"
@@ -29,32 +31,32 @@ namespace {
 const char* www_username = SECRET_WEB_USER;
 const char* www_password = SECRET_WEB_PASS;
 const int MAX_LOGIN_ATTEMPTS = 5;
+const unsigned long LOGIN_ATTEMPTS_RESET_MS = 5 * 60 * 1000; // Expiration du compteur d'échecs
 int loginAttempts = 0;
+unsigned long lastFailedAttemptTimestamp = 0;
 
 // --- Vérification de l'authentification HTTP basique ---
 bool isAuthenticated(WebServer& server) {
+    // Le compteur d'échecs expire : pas de verrouillage définitif jusqu'au reboot
+    if (loginAttempts > 0 && millis() - lastFailedAttemptTimestamp > LOGIN_ATTEMPTS_RESET_MS) {
+        loginAttempts = 0;
+    }
     if (loginAttempts >= MAX_LOGIN_ATTEMPTS) {
-        server.send(403, "text/plain", "Trop de tentatives. Accès bloqué.");
+        server.send(429, "text/plain", "Trop de tentatives. Reessayez dans quelques minutes.");
         return false;
     }
-    if (!server.hasHeader("Authorization")) {
-        server.sendHeader("WWW-Authenticate", "Basic realm=\"Secure Area\"");
-        server.send(401, "text/plain", "Authentification requise");
-        loginAttempts++;
-        return false;
-    }
-    String auth = server.header("Authorization");
-    auth.replace("Basic ", "");
-    String expectedAuth = base64::encode(String(www_username) + ":" + www_password);
-    if (auth == expectedAuth) {
+    if (server.authenticate(www_username, www_password)) {
         loginAttempts = 0;
         return true;
-    } else {
-        server.sendHeader("WWW-Authenticate", "Basic realm=\"Secure Area\"");
-        server.send(401, "text/plain", "Authentification requise");
-        loginAttempts++;
-        return false;
     }
+    // Ne compter que les requêtes portant des identifiants (mauvais mot de passe) :
+    // la première requête d'un navigateur n'a pas encore de header Authorization
+    if (server.hasHeader("Authorization")) {
+        loginAttempts++;
+        lastFailedAttemptTimestamp = millis();
+    }
+    server.requestAuthentication();
+    return false;
 }
 }
 
@@ -62,15 +64,30 @@ WebServer WebServerManager::server(80);
 
 // --- Initialisation du serveur web et des routes ---
 void WebServerManager::init() {
-    server.begin();
+    // Nécessaire pour que hasHeader("Authorization") fonctionne dans isAuthenticated
+    const char* headerKeys[] = {"Authorization"};
+    server.collectHeaders(headerKeys, 1);
+
     setupRoutes();
     ElegantOTA.begin(&server);
-    server.enableCORS(true);
+    ElegantOTA.setAuth(www_username, www_password); // Protège /update (UI et upload OTA)
+    server.begin();
 }
 
 // --- Gestion des requêtes entrantes ---
 void WebServerManager::handleClient() {
     server.handleClient();
+}
+
+// --- Tâche FreeRTOS : traitement des requêtes web et OTA ---
+void WebServerManager::webServerTask(void *parameter) {
+    esp_task_wdt_add(NULL); // Tâche surveillée par le watchdog
+    for(;;) {
+        esp_task_wdt_reset();
+        server.handleClient();
+        ElegantOTA.loop(); // Requis par ElegantOTA v3 (finalise le reboot post-mise à jour)
+        vTaskDelay(pdMS_TO_TICKS(2));
+    }
 }
 
 // --- Définition des routes HTTP ---
@@ -79,11 +96,8 @@ void WebServerManager::setupRoutes() {
         if (!isAuthenticated(server)) return;
         server.send(200, "text/html", generateHtmlResponse());
     });
-    
-    server.on("/update", HTTP_GET, []() {
-        if (!isAuthenticated(server)) return;
-        server.send(200, "text/html", generateHtmlResponse());
-    });
+
+    // Note : /update est servi par ElegantOTA (protégé via ElegantOTA.setAuth)
 
     server.on("/api/status", HTTP_GET, []() {
         if (!isAuthenticated(server)) return;
@@ -100,10 +114,10 @@ void WebServerManager::setupRoutes() {
         // Bouton poussoir
         int buttonState = digitalRead(config.buttonPinNumber);
         String button = buttonState == LOW ? "ON" : "OFF";
-        // Dernier événement (à améliorer si besoin)
-        String lastEvent = "-";
-        // Alerte (placeholder)
-        String alert = "-";
+        // Dernier événement
+        String lastEvent = DoorController::getLastEvent();
+        // Dernière alerte de sécurité
+        String alert = DoorController::getLastAlert();
         json += "\"doorState\":\"" + doorState + "\",";
         json += "\"doorPosition\":\"" + doorPosition + "\",";
         json += "\"limitUpper\":\"" + limitUpper + "\",";
@@ -120,6 +134,7 @@ void WebServerManager::setupRoutes() {
         if (!isAuthenticated(server)) return;
         if (server.hasArg("action")) {
             String action = server.arg("action");
+            DoorController::setManualOverride();
             if (action == "OPEN") DoorController::open();
             else if (action == "CLOSE") DoorController::close();
             else if (action == "STOP") DoorController::stop();
@@ -147,6 +162,7 @@ String WebServerManager::generateHtmlResponse() {
     html += "<div class='status'><b>Dernier événement :</b> <span id='lastEvent'>?</span></div>";
     html += "<div class='status'><b>Alerte :</b> <span id='alert'>?</span></div>";
     html += "<form method='POST' action='/cmd'><button name='action' value='OPEN'>Ouvrir</button><button name='action' value='CLOSE'>Fermer</button><button name='action' value='STOP'>Stop</button></form>";
+    html += "<p><a href='/update'>Mise à jour OTA</a></p>";
     html += "</section>";
     html += "<footer>CluckControl Connect © 2025</footer>";
     html += "<script>setInterval(()=>{fetch('/api/status').then(r=>r.json()).then(d=>{document.getElementById('doorState').textContent=d.doorState;document.getElementById('doorPosition').textContent=d.doorPosition;document.getElementById('limitUpper').textContent=d.limitUpper;document.getElementById('limitLower').textContent=d.limitLower;document.getElementById('buttonState').textContent=d.buttonState;document.getElementById('wifiRssi').textContent=d.wifiRssi;document.getElementById('uptime').textContent=d.uptime;document.getElementById('lastEvent').textContent=d.lastEvent;document.getElementById('alert').textContent=d.alert;});},2000);</script>";
