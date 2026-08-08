@@ -39,6 +39,14 @@ Config config = {
     // === Paramètres de temporisation ===
     .buttonDebounceDelay = 500,       // Anti-rebond bouton (ms)
     .maxDoorMovementDuration = 22000, // Durée max mouvement porte (ms)
+    .motorReverseDeadTime = 400,      // Roue libre imposée avant réalimentation (ms)
+    .automationRetryDelay = 60000,    // Attente avant nouvelle tentative après échec (ms)
+    .maxMovementFailures = 3,         // Échecs consécutifs avant blocage (alerte DOOR_JAMMED)
+
+    // === Décalages lever/coucher (minutes, ajustables ensuite depuis Home Assistant) ===
+    .defaultSunriseOffsetMinutes = 0,  // Ouverture à l'heure du lever
+    .defaultSunsetOffsetMinutes = 20,  // Fermeture 20 min après le coucher : les poules
+                                       // rentrent à la tombée du jour, pas au coucher astronomique
 
     // === Paramètres heure d'été (DST) ===
     .dstEnabled = SECRET_DST_ENABLED, // true pour activer l'heure d'été, false sinon

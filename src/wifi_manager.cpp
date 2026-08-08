@@ -4,7 +4,7 @@
  *
  * wifi_manager.cpp
  * ----------------
- * Gère la connexion WiFi du système :
+ * Gère la connexion WiFi du système :
  *   - Connexion initiale au réseau WiFi
  *   - Affichage du RSSI (force du signal)
  *   - Tâche FreeRTOS pour la reconnexion automatique en cas de perte
@@ -12,30 +12,35 @@
 
 #include "wifi_manager.h"
 #include "config.h"
-#include <esp_task_wdt.h>
+#include "task_utils.h"
 
-WiFiClient WiFiManager::wifiClient;
-
-// --- Connexion initiale au réseau WiFi ---
+// --- Connexion au réseau WiFi ---
 bool WiFiManager::connect() {
+    // Mode station explicite : évite de laisser un point d'accès actif, et
+    // repartir d'un état propre est nécessaire pour qu'une reconnexion après
+    // une coupure prolongée aboutisse de façon fiable.
+    WiFi.mode(WIFI_STA);
+    WiFi.disconnect(true);
+    WiFi.setSleep(false);          // Latence réseau stable pour MQTT et l'interface web
+    WiFi.setAutoReconnect(true);
     WiFi.begin(config.ssid, config.password);
     Serial.print("Connexion au WiFi");
-    
+
     int attempts = 0;
     while (WiFi.status() != WL_CONNECTED && attempts < 20) {
-        delay(500);
+        vTaskDelay(pdMS_TO_TICKS(500));
         Serial.print(".");
         attempts++;
     }
-    
+
     if (WiFi.status() == WL_CONNECTED) {
-        Serial.println("\nConnecté au WiFi");
+        Serial.println("\nConnecte au WiFi");
         Serial.print("Adresse IP: ");
         Serial.println(WiFi.localIP());
         return true;
     }
-    
-    Serial.println("\nÉchec de connexion au WiFi");
+
+    Serial.println("\nEchec de connexion au WiFi");
     return false;
 }
 
@@ -45,18 +50,17 @@ void WiFiManager::printRSSI() {
     Serial.println(WiFi.RSSI());
 }
 
-// --- Tâche FreeRTOS : reconnexion automatique au WiFi ---
+// --- Tâche FreeRTOS : reconnexion automatique au WiFi ---
 void WiFiManager::reconnectTask(void *pvParameters) {
     esp_task_wdt_add(NULL); // Tâche surveillée par le watchdog
-    for(;;) {
+    for (;;) {
         esp_task_wdt_reset();
         if (WiFi.status() != WL_CONNECTED) {
             Serial.println("Connexion WiFi perdue. Tentative de reconnexion...");
             if (!connect()) {
-                Serial.println("Échec de reconnexion. Nouvelle tentative dans 30 secondes.");
+                Serial.println("Echec de reconnexion. Nouvelle tentative dans 30 secondes.");
             }
         }
-        // Attendre 30 secondes avant la prochaine vérification
-        delay(30000);
+        watchdogDelay(30000); // Vérification toutes les 30 secondes
     }
 }

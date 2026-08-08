@@ -4,7 +4,7 @@
  *
  * mqtt_manager.h
  * --------------
- * Déclaration de la classe MQTTManager pour la gestion MQTT :
+ * Déclaration de la classe MQTTManager pour la gestion MQTT :
  *   - Initialisation et gestion de la connexion MQTT
  *   - Publication et souscription des topics
  *   - Publication Home Assistant Discovery
@@ -20,13 +20,16 @@
 class MQTTManager {
 public:
     static void init();
-    static void loop();
-    static void publishDoorState(const char* state);
-    static void callback(char* topic, byte* payload, unsigned int length);
-    static void reconnect();
+    static void callback(char *topic, byte *payload, unsigned int length);
     static void mqttTask(void *parameter);
     static void publishHADiscovery();
-    static void publishTopic(const char* logicalTopic, const char* value);
+    static void publishSettings();
+    static void publishTopic(const char *logicalTopic, const char *value);
+    static bool isConnected();
+
+private:
+    static void loop();
+    static void reconnect();
 };
 
 #endif // MQTT_MANAGER_H

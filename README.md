@@ -14,16 +14,20 @@ CluckControl Connect is an open source home automation system for automated chic
 ## Main Features
 
 - **State-based sun scheduling**: the door is continuously kept in the expected state (open by day, closed by night). A missed event (reboot, network outage) is automatically caught up — the door will not stay open all night because of a missed minute.
+- **Adjustable sunrise/sunset offsets**: opening and closing times can be shifted from −120 to +120 minutes directly from Home Assistant (*Coop Opening offset* / *Coop Closing offset*). Hens go in at dusk rather than at astronomical sunset, so closing defaults to **+20 min**. Values are stored in NVS and survive reboots.
 - **Manual override**: any manual command (push button, web interface, MQTT/Home Assistant) suspends the automation until the next day/night transition.
 - **Safety layers**:
+  - single-writer motor control: only one FreeRTOS task drives the H-bridge, every other source (MQTT, web, scheduler) goes through a command queue — no race can reverse the motor while it runs;
+  - enforced dead time (`motorReverseDeadTime`, 400 ms) before re-energising the motor, so a direction reversal never stacks inrush current on top of back-EMF;
   - motor automatically stopped when a limit switch is reached;
-  - maximum movement duration (`maxDoorMovementDuration`, 22 s by default) with `MOVEMENT_TIMEOUT` MQTT alert if exceeded (jammed door), without endless retries;
+  - maximum movement duration (`maxDoorMovementDuration`, 22 s by default) with a `MOVEMENT_TIMEOUT` alert and a retry one minute later; after 3 consecutive failures the automation latches with a `DOOR_JAMMED` alert instead of hammering the motor;
   - detection of the impossible "both limit switches active" state (`LIMIT_SWITCH_FAULT` alert, movements refused while the fault persists);
-  - push button acts as an emergency stop while the door is moving;
-  - task watchdog (`esp_task_wdt`, 120 s): automatic reboot if a critical task freezes.
-- **Full MQTT integration**: states, commands, Last Will Testament (`poulailler/status` online/offline), Home Assistant Discovery for all entities (door cover with real position, limit switches, button, RSSI, uptime, last event, alerts).
-- **Secured web interface**: HTTP Basic authentication, failed-attempt limiting with automatic expiry, protected OTA updates (ElegantOTA).
-- **Resilience**: the local automation keeps working even if WiFi or the MQTT broker is unreachable (non-blocking reconnections).
+  - push button acts as an emergency stop while the door is moving, and is edge-triggered so a stuck or shorted button cannot cycle the motor;
+  - the automation freezes rather than acting on a bogus time if the RTC is missing or returns an implausible date;
+  - task watchdog (`esp_task_wdt`, 30 s): automatic reboot if a critical task freezes.
+- **Full MQTT integration**: states, commands, Last Will Testament (`poulailler/status` online/offline), Home Assistant Discovery for all entities (door cover with real position, limit switches, button, RSSI, uptime, firmware version, effective opening/closing times, offsets, last event, alerts).
+- **Secured web interface**: HTTP Basic authentication, failed-attempt limiting that never locks out valid credentials, anti-CSRF protection on door commands, protected OTA updates (ElegantOTA).
+- **Resilience**: the local automation keeps working even if WiFi or the MQTT broker is unreachable (non-blocking reconnections, full state republish once the broker is back).
 
 ## Required Hardware
 
@@ -51,6 +55,8 @@ CluckControl Connect is an open source home automation system for automated chic
 | RTC DS3231 | 21 (SDA) / 22 (SCL) | default I²C bus |
 
 > ⚠️ GPIO 6–11 are reserved for the internal SPI flash and must never be used. The mapping can be changed in `src/config.cpp`.
+
+> 🔧 **Strongly recommended: 10 kΩ pull-down resistors to GND on EN, IN1 and IN2, on the driver side.** During a reset (watchdog, OTA, brownout) the ESP32 pins revert to floating inputs for a few hundred milliseconds before the firmware puts the motor at rest. An H-bridge with floating inputs has undefined behaviour — three resistors eliminate a whole class of failures that firmware cannot cover.
 
 ## Planned Hardware Evolutions
 
@@ -80,7 +86,8 @@ CluckControl Connect is an open source home automation system for automated chic
 - Control and supervision via the secured web interface (live status, OPEN/CLOSE/STOP commands, link to OTA update page)
 - Automatic integration into Home Assistant via MQTT Discovery
 - MQTT commands on `poulailler/door/cmd`: `OPEN`, `CLOSE`, `STOP`
-- OTA updates via `/update` (protected by the same credentials)
+- Sunrise/sunset offsets in minutes on `poulailler/sunrise_offset/set` and `poulailler/sunset_offset/set` (also exposed as *number* entities in Home Assistant)
+- OTA updates via `/update` (protected by the same credentials). Remember to bump `FIRMWARE_VERSION` in `include/config.h` — it is reported in the *Firmware* sensor and in the device info panel.
 
 ## Home Assistant: "door not closed after sunset" alert
 
@@ -156,16 +163,20 @@ CluckControl Connect est un système domotique open source pour la gestion autom
 ## Fonctionnalités principales
 
 - **Asservissement jour/nuit basé sur l'état** : la porte est maintenue en continu dans l'état attendu (ouverte le jour, fermée la nuit). Un événement manqué (reboot, coupure réseau) est rattrapé automatiquement — la porte ne restera pas ouverte toute la nuit pour une minute ratée.
+- **Temporisations réglables autour du lever/coucher** : les horaires d'ouverture et de fermeture sont décalables de −120 à +120 minutes directement depuis Home Assistant (*Poulailler Décalage ouverture* / *Poulailler Décalage fermeture*). Les poules rentrent à la tombée du jour et non au coucher astronomique : la fermeture est donc décalée de **+20 min** par défaut. Les valeurs sont conservées en NVS et survivent aux redémarrages.
 - **Priorité manuelle** : toute commande manuelle (bouton poussoir, interface web, MQTT/Home Assistant) suspend l'automatisme jusqu'à la prochaine transition jour/nuit.
 - **Sécurités** :
+  - pilotage moteur à écrivain unique : une seule tâche FreeRTOS commande le pont en H, toutes les autres sources (MQTT, web, asservissement) passent par une file de commandes — aucune course ne peut inverser le moteur en pleine course ;
+  - temps mort imposé (`motorReverseDeadTime`, 400 ms) avant toute réalimentation du moteur, pour ne jamais cumuler courant d'appel et force contre-électromotrice lors d'une inversion ;
   - arrêt automatique du moteur à l'atteinte d'une fin de course ;
-  - durée maximale de mouvement (`maxDoorMovementDuration`, 22 s par défaut) avec alerte MQTT `MOVEMENT_TIMEOUT` en cas de dépassement (porte coincée), sans acharnement du moteur ;
+  - durée maximale de mouvement (`maxDoorMovementDuration`, 22 s par défaut) avec alerte `MOVEMENT_TIMEOUT` et nouvelle tentative une minute plus tard ; après 3 échecs consécutifs, l'automatisme se verrouille avec une alerte `DOOR_JAMMED` au lieu de s'acharner sur le moteur ;
   - détection de l'état impossible « deux fins de course actives » (alerte `LIMIT_SWITCH_FAULT`, mouvements refusés tant que la panne persiste) ;
-  - le bouton poussoir sert d'arrêt d'urgence pendant un mouvement ;
-  - watchdog de tâches (`esp_task_wdt`, 120 s) : reboot automatique si une tâche critique se fige.
-- **Intégration MQTT complète** : états, commandes, Last Will Testament (`poulailler/status` online/offline), Home Assistant Discovery pour toutes les entités (cover de porte avec position réelle, fins de course, bouton, RSSI, uptime, dernier événement, alertes).
-- **Interface web sécurisée** : authentification HTTP Basic, limitation des tentatives avec expiration automatique, mises à jour OTA protégées (ElegantOTA).
-- **Résilience** : l'automatisme local continue de fonctionner même si le WiFi ou le broker MQTT est injoignable (reconnexions non bloquantes).
+  - le bouton poussoir sert d'arrêt d'urgence pendant un mouvement, et est déclenché sur front afin qu'un bouton collé ou un fil en court-circuit ne puisse pas faire cycler le moteur ;
+  - l'automatisme se fige plutôt que d'agir sur une heure fantaisiste si la RTC est absente ou renvoie une date invraisemblable ;
+  - watchdog de tâches (`esp_task_wdt`, 30 s) : reboot automatique si une tâche critique se fige.
+- **Intégration MQTT complète** : états, commandes, Last Will Testament (`poulailler/status` online/offline), Home Assistant Discovery pour toutes les entités (cover de porte avec position réelle, fins de course, bouton, RSSI, uptime, version du firmware, horaires effectifs d'ouverture/fermeture, décalages, dernier événement, alertes).
+- **Interface web sécurisée** : authentification HTTP Basic, limitation des tentatives qui ne verrouille jamais des identifiants valides, protection anti-CSRF sur les commandes de porte, mises à jour OTA protégées (ElegantOTA).
+- **Résilience** : l'automatisme local continue de fonctionner même si le WiFi ou le broker MQTT est injoignable (reconnexions non bloquantes, republication complète des états au retour du broker).
 
 ## Matériel nécessaire
 
@@ -193,6 +204,8 @@ CluckControl Connect est un système domotique open source pour la gestion autom
 | RTC DS3231 | 21 (SDA) / 22 (SCL) | bus I²C par défaut |
 
 > ⚠️ Les GPIO 6 à 11 sont réservés à la flash SPI interne et ne doivent jamais être utilisés. Le brochage est modifiable dans `src/config.cpp`.
+
+> 🔧 **Vivement recommandé : résistances de tirage bas 10 kΩ vers GND sur EN, IN1 et IN2, côté driver.** Lors d'un reset (watchdog, OTA, brownout), les broches de l'ESP32 repassent en entrée flottante pendant quelques centaines de millisecondes avant que le firmware ne mette le moteur à l'arrêt. Un pont en H avec des entrées flottantes a un comportement indéfini — trois résistances suppriment toute une classe de pannes que le logiciel ne peut pas couvrir.
 
 ## Évolutions matérielles envisagées
 
@@ -222,7 +235,8 @@ CluckControl Connect est un système domotique open source pour la gestion autom
 - Contrôle et supervision via l'interface web sécurisée (état en direct, commandes OUVRIR/FERMER/STOP, lien vers la page de mise à jour OTA)
 - Intégration automatique dans Home Assistant via MQTT Discovery
 - Commandes MQTT sur `poulailler/door/cmd` : `OPEN`, `CLOSE`, `STOP`
-- Mises à jour OTA via `/update` (protégées par les mêmes identifiants)
+- Décalages lever/coucher en minutes sur `poulailler/sunrise_offset/set` et `poulailler/sunset_offset/set` (également exposés comme entités *number* dans Home Assistant)
+- Mises à jour OTA via `/update` (protégées par les mêmes identifiants). Pensez à incrémenter `FIRMWARE_VERSION` dans `include/config.h` : la valeur est remontée dans le capteur *Firmware* et dans la fiche de l'appareil.
 
 ## Home Assistant : alerte « porte non fermée après le coucher »
 

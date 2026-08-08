@@ -4,7 +4,8 @@
  *
  * config.h
  * --------
- * Structure de configuration principale du système :
+ * Structure de configuration principale du système :
+ *   - Version du firmware
  *   - Paramètres WiFi
  *   - Paramètres MQTT
  *   - Paramètres géographiques
@@ -19,6 +20,11 @@
 #include <Arduino.h>
 #include <cstdint>
 #include "secrets.h"
+
+// Version du firmware : publiée au démarrage sur le port série, exposée dans
+// Home Assistant (sw_version de l'appareil + capteur de diagnostic) et affichée
+// dans l'interface web. À incrémenter à chaque mise à jour OTA.
+#define FIRMWARE_VERSION "2.0.0"
 
 // Structure de configuration principale du système
 struct Config {
@@ -48,6 +54,15 @@ struct Config {
     // Paramètres de temporisation
     unsigned long buttonDebounceDelay;      // Anti-rebond bouton (ms)
     unsigned long maxDoorMovementDuration;  // Durée max mouvement porte (ms)
+    unsigned long motorReverseDeadTime;     // Temps mort imposé avant de réalimenter le moteur (ms)
+    unsigned long automationRetryDelay;     // Délai avant nouvelle tentative après un mouvement en échec (ms)
+    uint8_t maxMovementFailures;            // Échecs consécutifs avant blocage de l'automatisme
+
+    // Décalages appliqués au lever/coucher du soleil (minutes).
+    // Valeurs par défaut au premier démarrage ; ensuite ajustables depuis Home
+    // Assistant et conservées en mémoire non volatile (NVS).
+    int defaultSunriseOffsetMinutes; // Décalage d'ouverture (négatif = plus tôt)
+    int defaultSunsetOffsetMinutes;  // Décalage de fermeture (positif = plus tard)
 
     // Paramètres heure d'été (DST)
     bool dstEnabled;                // true pour activer l'heure d'été, false sinon
