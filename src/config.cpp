@@ -25,7 +25,10 @@ Config config = {
     // === Paramètres géographiques ===
     .latitude = SECRET_LATITUDE,      // Latitude du poulailler (depuis secrets.h)
     .longitude = SECRET_LONGITUDE,    // Longitude du poulailler (depuis secrets.h)
-    .timezoneOffset = SECRET_TIMEZONE_OFFSET, // Fuseau horaire explicite en hiver (ex: 1 pour UTC+1, la logique DST ajoutera +1 l'été)
+    // Règle POSIX TZ : UTC+1 l'hiver, UTC+2 du dernier dimanche de mars (2 h)
+    // au dernier dimanche d'octobre (3 h). Autres pays : chercher « POSIX TZ »
+    // de la ville, par ex. "EST5EDT,M3.2.0,M11.1.0" pour New York.
+    .timezone = "CET-1CEST,M3.5.0,M10.5.0/3",
 
     // === Brochage matériel ===
     // GPIO 6-11 interdits (flash SPI interne) ; 0/2/5/12/15 sont des broches de strapping
@@ -47,9 +50,4 @@ Config config = {
     .defaultSunriseOffsetMinutes = 0,  // Ouverture à l'heure du lever
     .defaultSunsetOffsetMinutes = 20,  // Fermeture 20 min après le coucher : les poules
                                        // rentrent à la tombée du jour, pas au coucher astronomique
-
-    // === Paramètres heure d'été (DST) ===
-    .dstEnabled = SECRET_DST_ENABLED, // true pour activer l'heure d'été, false sinon
-    .DST_START_MONTH = SECRET_DST_START_MONTH, // Mois de début de l'heure d'été
-    .DST_END_MONTH = SECRET_DST_END_MONTH,     // Mois de fin de l'heure d'été
 };

@@ -7,8 +7,8 @@
  * Exemple de fichier de configuration des secrets et paramètres sensibles :
  *   - Identifiants WiFi, MQTT, Web
  *   - Coordonnées GPS du poulailler
- *   - Fuseau horaire explicite
- *   - Paramètres DST (heure d'été, activable/désactivable)
+ *
+ * Le fuseau horaire et l'heure d'été se règlent dans src/config.cpp (timezone).
  *
  * À copier sous le nom secrets.h et à adapter à votre installation.
  * Ne pas versionner secrets.h !
@@ -30,11 +30,3 @@
 // --- Coordonnées GPS du poulailler (exemple : Paris) ---
 #define SECRET_LATITUDE 48.856614
 #define SECRET_LONGITUDE 2.3522219
-
-// --- Fuseau horaire explicite (exemple : UTC+1 pour Paris en hiver) ---
-#define SECRET_TIMEZONE_OFFSET 1 // Décalage horaire par rapport à UTC en hiver (ex : 1 pour UTC+1, la logique DST ajoutera +1 l'été)
-
-// --- Paramètres DST (heure d'été) ---
-#define SECRET_DST_ENABLED true           // true pour activer l'heure d'été, false pour la désactiver
-#define SECRET_DST_START_MONTH 3          // Mois de début de l'heure d'été (mars)
-#define SECRET_DST_END_MONTH 10           // Mois de fin de l'heure d'été (octobre)

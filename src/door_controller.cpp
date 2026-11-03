@@ -54,7 +54,6 @@ bool DoorController::daytimeInitialized = false;
 
 // --- Accesseurs ---
 bool DoorController::getIsDoorMoving() { return isDoorMoving; }
-bool DoorController::getIsDirectionUp() { return previousDoorDirectionUp; }
 const char *DoorController::getLastEvent() { return lastEvent; }
 const char *DoorController::getLastAlert() { return lastAlert; }
 
@@ -117,29 +116,29 @@ void DoorController::publishAllDoorStates() {
     int upper = digitalRead(config.upperLimitSwitchPinNumber);
     int lower = digitalRead(config.lowerLimitSwitchPinNumber);
     if (upper != prevUpperLimit) {
-        MQTTManager::publishTopic("topic_limit_switch_upper", upper == LOW ? "ON" : "OFF");
+        MQTTManager::publishTopic(topic_limit_switch_upper, upper == LOW ? "ON" : "OFF");
         prevUpperLimit = upper;
     }
     if (lower != prevLowerLimit) {
-        MQTTManager::publishTopic("topic_limit_switch_lower", lower == LOW ? "ON" : "OFF");
+        MQTTManager::publishTopic(topic_limit_switch_lower, lower == LOW ? "ON" : "OFF");
         prevLowerLimit = lower;
     }
 
     const char *pos = getDoorPosition();
     if (prevDoorPosition == nullptr || strcmp(pos, prevDoorPosition) != 0) {
-        MQTTManager::publishTopic("topic_door_position", pos);
+        MQTTManager::publishTopic(topic_door_position, pos);
         prevDoorPosition = pos;
     }
 }
 
 void DoorController::setEvent(const char *event) {
     lastEvent = event;
-    MQTTManager::publishTopic("topic_last_event", event);
+    MQTTManager::publishTopic(topic_last_event, event);
 }
 
 void DoorController::setAlert(const char *alert) {
     lastAlert = alert;
-    MQTTManager::publishTopic("topic_alert", alert);
+    MQTTManager::publishTopic(topic_alert, alert);
 }
 
 // --- Temps mort avant réalimentation du moteur ---
@@ -208,7 +207,7 @@ void DoorController::handleButtonPress() {
     int buttonState = digitalRead(config.buttonPinNumber);
 
     if (buttonState != prevButtonState) {
-        MQTTManager::publishTopic("topic_button", buttonState == LOW ? "ON" : "OFF");
+        MQTTManager::publishTopic(topic_button, buttonState == LOW ? "ON" : "OFF");
     }
 
     // Déclenchement sur front descendant franc uniquement. Un bouton maintenu,

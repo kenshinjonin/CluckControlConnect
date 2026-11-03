@@ -19,6 +19,7 @@
 
 #include "web_server.h"
 #include <Update.h>
+#include <esp_timer.h>
 #include <esp_task_wdt.h>
 #include <WiFi.h>
 #include <WebServer.h>
@@ -217,7 +218,7 @@ void WebServerManager::setupRoutes() {
         snprintf(json, sizeof(json),
                  "{\"doorState\":\"%s\",\"doorPosition\":\"%s\",\"limitUpper\":\"%s\","
                  "\"limitLower\":\"%s\",\"buttonState\":\"%s\",\"wifiRssi\":\"%d\","
-                 "\"uptime\":\"%lu\",\"lastEvent\":\"%s\",\"alert\":\"%s\","
+                 "\"uptime\":\"%llu\",\"lastEvent\":\"%s\",\"alert\":\"%s\","
                  "\"firmware\":\"%s\",\"mqtt\":\"%s\",\"sunrise\":\"%s\",\"sunset\":\"%s\","
                  "\"sunriseOffset\":\"%+d\",\"sunsetOffset\":\"%+d\"}",
                  DoorController::getIsDoorMoving() ? "MOVING" : "STOPPED",
@@ -226,7 +227,7 @@ void WebServerManager::setupRoutes() {
                  lower == LOW ? "ON" : "OFF",
                  buttonState == LOW ? "ON" : "OFF",
                  WiFi.RSSI(),
-                 millis() / 1000,
+                 (unsigned long long)(esp_timer_get_time() / 1000000),
                  DoorController::getLastEvent(),
                  DoorController::getLastAlert(),
                  FIRMWARE_VERSION,

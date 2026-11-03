@@ -6,7 +6,6 @@
  * --------------
  * Déclaration de la classe WiFiManager pour la gestion du WiFi :
  *   - Connexion initiale
- *   - Affichage RSSI
  *   - Tâche FreeRTOS de reconnexion
  */
 
@@ -17,6 +16,5 @@
 class WiFiManager {
 public:
     static bool connect();
-    static void printRSSI();
     static void reconnectTask(void *pvParameters);
 };

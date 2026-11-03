@@ -11,7 +11,6 @@
  *   - Paramètres géographiques
  *   - Brochage matériel
  *   - Paramètres de temporisation
- *   - Paramètres heure d'été (DST)
  *
  */
 
@@ -25,6 +24,14 @@
 // Home Assistant (sw_version de l'appareil + capteur de diagnostic) et affichée
 // dans l'interface web. À incrémenter à chaque mise à jour OTA.
 #define FIRMWARE_VERSION "2.1.0"
+
+// Identifiant de l'appareil : préfixe des topics MQTT et des identifiants Home
+// Assistant (lettres minuscules, chiffres et _ uniquement). La valeur par défaut
+// conserve les topics et entités existants ; un second poulailler sur le même
+// broker se compile avec build_flags = -DDEVICE_ID=\"poulailler2\".
+#ifndef DEVICE_ID
+#define DEVICE_ID "poulailler"
+#endif
 
 // Structure de configuration principale du système
 struct Config {
@@ -41,7 +48,7 @@ struct Config {
     // Paramètres géographiques
     double latitude;                 // Latitude du poulailler
     double longitude;                // Longitude du poulailler
-    int timezoneOffset;              // Décalage horaire UTC en hiver (ex: 1 pour UTC+1, la logique DST ajoutera +1 l'été)
+    const char *timezone;            // Règle POSIX TZ : fuseau et heure d'été
 
     // Brochage matériel
     uint8_t buttonPinNumber;         // Broche du bouton poussoir
@@ -63,11 +70,6 @@ struct Config {
     // Assistant et conservées en mémoire non volatile (NVS).
     int defaultSunriseOffsetMinutes; // Décalage d'ouverture (négatif = plus tôt)
     int defaultSunsetOffsetMinutes;  // Décalage de fermeture (positif = plus tard)
-
-    // Paramètres heure d'été (DST)
-    bool dstEnabled;                // true pour activer l'heure d'été, false sinon
-    int DST_START_MONTH;            // Mois de début de l'heure d'été
-    int DST_END_MONTH;              // Mois de fin de l'heure d'été
 };
 
 // Déclaration de la variable globale de configuration

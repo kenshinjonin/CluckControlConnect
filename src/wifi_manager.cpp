@@ -6,7 +6,6 @@
  * ----------------
  * Gère la connexion WiFi du système :
  *   - Connexion initiale au réseau WiFi
- *   - Affichage du RSSI (force du signal)
  *   - Tâche FreeRTOS pour la reconnexion automatique en cas de perte
  */
 
@@ -42,12 +41,6 @@ bool WiFiManager::connect() {
 
     Serial.println("\nEchec de connexion au WiFi");
     return false;
-}
-
-// --- Affichage du RSSI WiFi sur le port série ---
-void WiFiManager::printRSSI() {
-    Serial.print("Force du signal (RSSI): ");
-    Serial.println(WiFi.RSSI());
 }
 
 // --- Tâche FreeRTOS : reconnexion automatique au WiFi ---

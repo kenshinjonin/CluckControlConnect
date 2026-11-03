@@ -5,63 +5,44 @@
  * time_manager.cpp
  * ---------------
  * Gère la synchronisation et la gestion du temps :
- *   - Initialisation RTC/NTP
+ *   - Horloge système de l'ESP32 synchronisée par SNTP, en UTC
+ *   - Fuseau horaire et heure d'été appliqués nativement (règle POSIX TZ)
+ *   - RTC DS3231 en UTC : remet l'horloge à l'heure au démarrage, réécrite
+ *     après chaque synchronisation NTP
  *   - Calcul automatique du lever/coucher du soleil (Dusk2Dawn)
  *   - Décalages utilisateur persistés en mémoire non volatile (NVS)
- *   - Prise en compte de l'heure d'été (DST)
- *   - Tâches FreeRTOS pour la mise à jour de l'heure et du lever/coucher
  *
- * Convention horaire : la RTC est réglée en heure d'hiver toute l'année
- * (offset NTP fixe). Le décalage d'été (+60 min) est appliqué de façon
- * cohérente à la fois aux horaires de lever/coucher et à l'heure courante
- * retournée par getCurrentTimeMinutes().
- *
- * En l'absence de RTC ou sur une date invalide, les accesseurs renvoient -1
- * plutôt qu'une valeur arbitraire : l'automatisme se fige au lieu d'agir sur
- * une heure fantaisiste.
+ * Sans NTP ni RTC valide, les accesseurs renvoient -1 plutôt qu'une valeur
+ * arbitraire : l'automatisme se fige au lieu d'agir sur une heure fantaisiste.
  */
 
 #include "config.h"
 #include "time_manager.h"
+#include "daytime.h"
 #include "task_utils.h"
-#include <WiFi.h>
-#include <WiFiUdp.h>
+#include <RTClib.h>
+#include <Dusk2Dawn.h>
 #include <Preferences.h>
+#include <esp_sntp.h>
+#include <sys/time.h>
 
-WiFiUDP ntpUDP;
-RTC_DS3231 TimeManager::rtc;
-NTPClient TimeManager::timeClient(ntpUDP, "pool.ntp.org", config.timezoneOffset * 3600); // Décalage UTC en hiver, DST ajouté dynamiquement
-Dusk2Dawn TimeManager::d2d(config.latitude, config.longitude, config.timezoneOffset); // Décalage UTC en hiver, DST ajouté dynamiquement
-
+// La RTC n'est touchée que par init() (avant les tâches) puis par
+// updateTimeTask : un seul utilisateur, pas de verrou nécessaire.
+static RTC_DS3231 rtc;
+// Fuseau 0 : horaires en minutes UTC, convertis ensuite par la règle TZ
+static Dusk2Dawn d2d(config.latitude, config.longitude, 0);
 static Preferences preferences;
 
-// Le bus I2C de la RTC est sollicité depuis les deux coeurs : lecture de l'heure
-// par l'asservissement de la porte (coeur 1) et écriture NTP horaire (coeur 0).
-// Une lecture DS3231 est une transaction en deux temps (positionnement du
-// pointeur de registre puis lecture) qu'une écriture concurrente décalerait.
-// Aucun autre verrou n'est pris pendant sa détention : pas de risque d'interblocage.
-static SemaphoreHandle_t rtcMutex = nullptr;
-
-class RTCLock {
-public:
-    explicit RTCLock(uint32_t timeoutMs) : acquired(false) {
-        if (rtcMutex != nullptr) {
-            acquired = xSemaphoreTake(rtcMutex, pdMS_TO_TICKS(timeoutMs)) == pdTRUE;
-        }
-    }
-    ~RTCLock() {
-        if (acquired) xSemaphoreGive(rtcMutex);
-    }
-    bool ok() const { return acquired; }
-
-private:
-    bool acquired;
-};
+// Positionné par SNTP à chaque synchronisation, consommé par updateTimeTask
+static volatile bool ntpSynced = false;
 
 // Clés NVS (limitées à 15 caractères)
 static const char *NVS_NAMESPACE = "coop";
 static const char *NVS_KEY_SUNRISE_OFFSET = "sunriseOff";
 static const char *NVS_KEY_SUNSET_OFFSET = "sunsetOff";
+
+// 2100-01-01 UTC : au-delà, une date est tenue pour corrompue
+static const time_t MAX_VALID_EPOCH = 4102444800;
 
 volatile int TimeManager::rawSunriseMinutes = -1;
 volatile int TimeManager::rawSunsetMinutes = -1;
@@ -76,104 +57,75 @@ static int clampOffset(int minutes) {
     return minutes;
 }
 
-// --- Validation d'une date issue de la RTC ---
-// Une RTC absente ou muette renvoie des octets à 0xFF : la date obtenue passe
-// alors les vérifications naïves mais produit des éphémérides absurdes.
-static bool isPlausibleDate(const DateTime &date) {
-    return date.isValid() && date.year() >= 2024 && date.year() <= 2099;
+static bool isValidEpoch(time_t t) {
+    return t >= MIN_VALID_EPOCH && t < MAX_VALID_EPOCH;
 }
 
-// --- Initialisation du module temps (NVS, RTC/NTP, calcul lever/coucher) ---
+// Appelé par la tâche SNTP : on se contente de lever un drapeau, l'écriture
+// I2C de la RTC est faite par updateTimeTask.
+static void onNtpSync(struct timeval *tv) {
+    ntpSynced = true;
+}
+
+// --- Initialisation du module temps (NVS, RTC, SNTP, calcul lever/coucher) ---
 void TimeManager::init() {
-    rtcMutex = xSemaphoreCreateMutex();
     preferences.begin(NVS_NAMESPACE, false);
     sunriseOffsetMinutes = clampOffset(preferences.getInt(NVS_KEY_SUNRISE_OFFSET, config.defaultSunriseOffsetMinutes));
     sunsetOffsetMinutes = clampOffset(preferences.getInt(NVS_KEY_SUNSET_OFFSET, config.defaultSunsetOffsetMinutes));
     Serial.printf("Decalages lever/coucher : %+d / %+d min\n", (int)sunriseOffsetMinutes, (int)sunsetOffsetMinutes);
 
-    if (!rtc.begin()) {
-        Serial.println("RTC DS3231 introuvable : asservissement horaire desactive");
-        rtcAvailable = false;
-        return;
+    rtcAvailable = rtc.begin();
+    if (!rtcAvailable) {
+        Serial.println("RTC DS3231 introuvable : heure disponible uniquement via NTP");
+    } else if (rtc.lostPower()) {
+        Serial.println("RTC a perdu son alimentation : attente de NTP");
+    } else {
+        // Une RTC muette renvoie des octets à 0xFF : la date obtenue est rejetée
+        time_t rtcTime = rtc.now().unixtime();
+        if (isValidEpoch(rtcTime)) {
+            struct timeval tv = {rtcTime, 0};
+            settimeofday(&tv, nullptr);
+        } else {
+            Serial.println("Date RTC invalide : attente de NTP");
+        }
     }
-    rtcAvailable = true;
 
-    timeClient.begin(); // Doit précéder tout appel à updateRTCTime()
+    sntp_set_time_sync_notification_cb(onNtpSync);
+    configTzTime(config.timezone, "pool.ntp.org");
 
-    if (rtc.lostPower()) {
-        Serial.println("RTC a perdu son alimentation, initialisation avec l'heure NTP");
-    }
-
-    updateRTCTime();
     calculateSunriseSunset();
 }
 
-bool TimeManager::isRTCAvailable() {
-    return rtcAvailable;
-}
-
-// --- Calcul du lever et coucher du soleil (avec ajustement DST) ---
+// --- Calcul du lever et coucher du soleil, en heure locale ---
 void TimeManager::calculateSunriseSunset() {
-    if (!rtcAvailable) return;
+    time_t now = time(nullptr);
+    if (!isValidEpoch(now)) return;
 
-    RTCLock lock(1000);
-    if (!lock.ok()) return;
-
-    DateTime now = rtc.now();
-    if (!isPlausibleDate(now)) {
-        Serial.println("Date RTC invalide : ephemerides non recalculees");
-        return;
-    }
-
-    // Calcul des horaires en minutes depuis minuit (heure d'hiver)
-    int sunrise = d2d.sunrise(now.year(), now.month(), now.day(), false);
-    int sunset = d2d.sunset(now.year(), now.month(), now.day(), false);
+    struct tm utc;
+    gmtime_r(&now, &utc);
+    int sunriseUtc = d2d.sunrise(utc.tm_year + 1900, utc.tm_mon + 1, utc.tm_mday, false);
+    int sunsetUtc = d2d.sunset(utc.tm_year + 1900, utc.tm_mon + 1, utc.tm_mday, false);
 
     // Dusk2Dawn ne signale pas ses échecs : sous une latitude où le soleil ne se
     // lève pas, le calcul interne produit un NaN dont la conversion en int est un
-    // comportement indéfini. On rejette donc toute valeur hors plage.
-    if (sunrise < 0 || sunrise >= 1440 || sunset < 0 || sunset >= 1440) {
+    // comportement indéfini. On rejette donc toute valeur hors de la journée UTC
+    // élargie d'un jour de part et d'autre (fuseaux extrêmes).
+    if (sunriseUtc <= -1440 || sunriseUtc >= 2880 || sunsetUtc <= -1440 || sunsetUtc >= 2880) {
         Serial.println("Ephemerides hors plage : valeurs precedentes conservees");
         return;
     }
 
-    // Ajustement pour l'heure d'été (getCurrentTimeMinutes applique le même décalage)
-    if (isDST(now)) {
-        sunrise += 60;
-        sunset += 60;
-    }
-
-    rawSunriseMinutes = sunrise % 1440;
-    rawSunsetMinutes = sunset % 1440;
+    // Conversion par l'heure absolue de l'événement : le fuseau et l'heure
+    // d'été en vigueur à cet instant précis sont appliqués par la règle TZ.
+    time_t utcMidnight = now - (utc.tm_hour * 3600 + utc.tm_min * 60 + utc.tm_sec);
+    rawSunriseMinutes = localMinutesOf(utcMidnight + sunriseUtc * 60);
+    rawSunsetMinutes = localMinutesOf(utcMidnight + sunsetUtc * 60);
 
     // Affichage des horaires effectifs, décalages utilisateur inclus
     char sunriseTime[6], sunsetTime[6];
     formatTime(getSunriseMinutes(), sunriseTime, sizeof(sunriseTime));
     formatTime(getSunsetMinutes(), sunsetTime, sizeof(sunsetTime));
     Serial.printf("Ouverture: %s | Fermeture: %s\n", sunriseTime, sunsetTime);
-}
-
-// --- Détermination si une date est en heure d'été (DST) ---
-// Règle européenne approchée : du dernier dimanche du mois de début
-// au dernier dimanche du mois de fin (l'heure exacte du changement est ignorée).
-bool TimeManager::isDST(DateTime date) {
-    if (!config.dstEnabled) return false;
-    if (date.month() < config.DST_START_MONTH || date.month() > config.DST_END_MONTH) {
-        return false;
-    }
-    if (date.month() > config.DST_START_MONTH && date.month() < config.DST_END_MONTH) {
-        return true;
-    }
-
-    // Jour de la semaine du 31 du mois courant (mars et octobre ont 31 jours), 0 = dimanche
-    int weekdayOf31 = (date.dayOfTheWeek() + (31 - date.day())) % 7;
-    int lastSunday = 31 - weekdayOf31;
-
-    if (date.month() == config.DST_START_MONTH) {
-        return date.day() >= lastSunday;
-    } else {
-        return date.day() < lastSunday;
-    }
 }
 
 // --- Horaires effectifs, décalages utilisateur appliqués ---
@@ -214,64 +166,41 @@ void TimeManager::setSunsetOffset(int minutes) {
     Serial.printf("Nouveau decalage de fermeture : %+d min\n", value);
 }
 
-// --- Obtenir l'heure locale actuelle en minutes depuis minuit ---
-// La RTC est en heure d'hiver : on applique le décalage d'été pour rester
-// cohérent avec les horaires de lever/coucher ajustés dans calculateSunriseSunset().
+// --- Heure locale actuelle en minutes depuis minuit ---
+// Lecture de l'horloge système : aucun accès I2C dans la boucle de la porte.
 int TimeManager::getCurrentTimeMinutes() {
-    if (!rtcAvailable) return -1;
-
-    // Bus occupé : on signale l'heure comme indisponible plutôt que d'attendre.
-    // L'asservissement se contente de sauter un cycle de 30 secondes.
-    RTCLock lock(200);
-    if (!lock.ok()) return -1;
-
-    DateTime now = rtc.now();
-    if (!isPlausibleDate(now)) return -1;
-
-    int minutes = now.hour() * 60 + now.minute();
-    if (isDST(now)) {
-        minutes += 60;
-    }
-    return minutes % 1440;
+    time_t now = time(nullptr);
+    if (!isValidEpoch(now)) return -1;
+    return localMinutesOf(now);
 }
 
-// --- Mise à jour de l'heure RTC depuis NTP ---
-bool TimeManager::updateRTCTime() {
-    if (!rtcAvailable || WiFi.status() != WL_CONNECTED) return false;
-    if (!timeClient.update()) return false;
-
-    unsigned long epochTime = timeClient.getEpochTime();
-    // Une réponse tronquée ou un serveur fautif donnerait une date absurde qui
-    // serait ensuite écrite dans la RTC sauvegardée par pile : on la rejette.
-    if (epochTime < 1704067200UL || epochTime > 4102444800UL) { // 2024-01-01 .. 2100-01-01
-        Serial.println("Heure NTP hors plage, RTC non modifiee");
-        return false;
-    }
-
-    RTCLock lock(1000);
-    if (!lock.ok()) return false;
-
-    rtc.adjust(DateTime((uint32_t)epochTime));
-    return true;
-}
-
-// --- Tâche FreeRTOS : mise à jour périodique de l'heure RTC ---
+// --- Tâche FreeRTOS : recopie de l'heure NTP dans la RTC ---
 void TimeManager::updateTimeTask(void *parameter) {
     esp_task_wdt_add(NULL);
     for (;;) {
         esp_task_wdt_reset();
-        updateRTCTime();
-        watchdogDelay(3600000); // Mise à jour toutes les heures
+        if (ntpSynced) {
+            ntpSynced = false;
+            time_t now = time(nullptr);
+            // Une réponse NTP fautive écrirait une date absurde dans la RTC
+            // sauvegardée par pile : elle est rejetée.
+            if (rtcAvailable && isValidEpoch(now)) {
+                rtc.adjust(DateTime((uint32_t)now));
+            }
+        }
+        watchdogDelay(60000);
     }
 }
 
-// --- Tâche FreeRTOS : calcul quotidien lever/coucher du soleil ---
+// --- Tâche FreeRTOS : calcul lever/coucher du soleil ---
 void TimeManager::calculateSunriseSunsetTask(void *parameter) {
     esp_task_wdt_add(NULL);
     for (;;) {
         esp_task_wdt_reset();
         calculateSunriseSunset();
-        watchdogDelay(3600000); // Recalcul toutes les heures (rattrape un changement de date manqué)
+        // Recalcul horaire (changement de date, heure d'été) ; toutes les
+        // minutes tant que l'heure n'est pas connue, pour reprendre dès NTP.
+        watchdogDelay(rawSunriseMinutes < 0 ? 60000 : 3600000);
     }
 }
 

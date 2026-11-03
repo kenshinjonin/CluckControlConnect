@@ -16,6 +16,15 @@
 
 #include <WiFi.h>
 #include <PubSubClient.h>
+#include "config.h"
+
+// Topics d'état publiés par la porte (via publishTopic)
+static const char *const topic_door_position = DEVICE_ID "/door/position";
+static const char *const topic_limit_switch_upper = DEVICE_ID "/door/limit_switch_upper";
+static const char *const topic_limit_switch_lower = DEVICE_ID "/door/limit_switch_lower";
+static const char *const topic_button = DEVICE_ID "/button/state";
+static const char *const topic_last_event = DEVICE_ID "/door/last_event";
+static const char *const topic_alert = DEVICE_ID "/alert";
 
 class MQTTManager {
 public:
@@ -24,7 +33,7 @@ public:
     static void mqttTask(void *parameter);
     static void publishHADiscovery();
     static void publishSettings();
-    static void publishTopic(const char *logicalTopic, const char *value);
+    static void publishTopic(const char *topic, const char *value);
     static bool isConnected();
 
 private:

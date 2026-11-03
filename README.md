@@ -77,7 +77,7 @@ CluckControl Connect is an open source home automation system for automated chic
    ```sh
    git clone https://github.com/kenshinjonin/CluckControlConnect.git
    ```
-2. Copy `include/secrets_example.h` to `include/secrets.h` and fill in your WiFi, MQTT and web credentials, your GPS coordinates and timezone/DST settings (never commit `secrets.h`!)
+2. Copy `include/secrets_example.h` to `include/secrets.h` and fill in your WiFi, MQTT and web credentials, and your GPS coordinates (never commit `secrets.h`!). Outside France, set your POSIX timezone rule in `src/config.cpp` (`timezone`): it also handles daylight saving time.
 3. Build and upload the firmware to the ESP32 using PlatformIO
 4. Access the web interface via the ESP32's IP address
 
@@ -88,7 +88,9 @@ CluckControl Connect is an open source home automation system for automated chic
 - MQTT commands on `poulailler/door/cmd`: `OPEN`, `CLOSE`, `STOP`
 - Sunrise/sunset offsets in minutes on `poulailler/sunrise_offset/set` and `poulailler/sunset_offset/set` (also exposed as *number* entities in Home Assistant)
 - OTA updates via `/update` (same credentials and anti-CSRF checks as door commands; the door is stopped before the reboot). Remember to bump `FIRMWARE_VERSION` in `include/config.h` — it is reported in the *Firmware* sensor and in the device info panel.
+- Several coops on the same broker: build each extra board with `build_flags = -DDEVICE_ID=\"poulailler2\"` (lowercase, digits, `_`). It prefixes every MQTT topic and Home Assistant ID; the default `poulailler` keeps existing topics and entities.
 - Unit tests of the pure logic (day/night decision, login lockout) run on the PC, no ESP32 needed: `pio test -e native`.
+- Network hardening (no code): the WiFi, MQTT and web passwords can be read from the flash by anyone with USB access to the coop, and HTTP Basic / MQTT on port 1883 travel unencrypted. Put the board on an isolated IoT SSID, restrict its MQTT user to `poulailler/#` and `homeassistant/#` (write access to `poulailler/door/cmd` is needed to clear retained commands), and use a web password unique to this device.
 
 ## Home Assistant: "door not closed after sunset" alert
 
@@ -227,7 +229,7 @@ CluckControl Connect est un système domotique open source pour la gestion autom
    ```sh
    git clone https://github.com/kenshinjonin/CluckControlConnect.git
    ```
-2. Copiez `include/secrets_example.h` vers `include/secrets.h` et renseignez vos identifiants WiFi, MQTT et web, vos coordonnées GPS et les paramètres de fuseau/heure d'été (ne jamais versionner `secrets.h` !)
+2. Copiez `include/secrets_example.h` vers `include/secrets.h` et renseignez vos identifiants WiFi, MQTT et web, et vos coordonnées GPS (ne jamais versionner `secrets.h` !). Hors de France, réglez la règle de fuseau POSIX dans `src/config.cpp` (`timezone`) : elle gère aussi l'heure d'été.
 3. Compilez et téléversez le firmware sur l'ESP32 via PlatformIO
 4. Accédez à l'interface web via l'adresse IP de l'ESP32
 
@@ -238,7 +240,9 @@ CluckControl Connect est un système domotique open source pour la gestion autom
 - Commandes MQTT sur `poulailler/door/cmd` : `OPEN`, `CLOSE`, `STOP`
 - Décalages lever/coucher en minutes sur `poulailler/sunrise_offset/set` et `poulailler/sunset_offset/set` (également exposés comme entités *number* dans Home Assistant)
 - Mises à jour OTA via `/update` (mêmes identifiants et même protection anti-CSRF que les commandes ; la porte est arrêtée avant le redémarrage). Pensez à incrémenter `FIRMWARE_VERSION` dans `include/config.h` : la valeur est remontée dans le capteur *Firmware* et dans la fiche de l'appareil.
+- Plusieurs poulaillers sur le même broker : compilez chaque boîtier supplémentaire avec `build_flags = -DDEVICE_ID=\"poulailler2\"` (minuscules, chiffres, `_`). Ce préfixe s'applique à tous les topics MQTT et identifiants Home Assistant ; la valeur par défaut `poulailler` conserve les topics et entités existants.
 - Tests unitaires de la logique pure (décision jour/nuit, blocage des mots de passe), sur PC sans ESP32 : `pio test -e native`.
+- Durcissement réseau (sans code) : les mots de passe WiFi, MQTT et web se lisent dans la flash par quiconque branche un câble USB au poulailler, et HTTP Basic / MQTT sur le port 1883 circulent en clair. Placez le boîtier sur un SSID IoT isolé, limitez son utilisateur MQTT à `poulailler/#` et `homeassistant/#` (l'écriture sur `poulailler/door/cmd` est nécessaire pour effacer les commandes retenues), et utilisez un mot de passe web propre à ce boîtier.
 
 ## Home Assistant : alerte « porte non fermée après le coucher »
 

@@ -40,7 +40,6 @@ public:
     static void doorControlTask(void *parameter);
 
     static bool getIsDoorMoving();
-    static bool getIsDirectionUp();
     static const char *getLastEvent();
     static const char *getLastAlert();
     static const char *getDoorPosition();

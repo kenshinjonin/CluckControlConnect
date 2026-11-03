@@ -22,6 +22,7 @@
 #include "door_controller.h"
 #include "time_manager.h"
 #include "task_utils.h"
+#include <esp_timer.h>
 
 // Clients MQTT et WiFi
 static WiFiClient espClient;
@@ -41,23 +42,17 @@ static char clientId[32] = "PoulaillerClient";
 static const uint16_t MQTT_BUFFER_SIZE = 1024;
 
 // Topics MQTT
-static const char *topic_cmd = "poulailler/door/cmd";
-static const char *topic_status = "poulailler/status";
-static const char *topic_wifi = "poulailler/wifi/rssi";
-static const char *topic_door_position = "poulailler/door/position";
-static const char *topic_limit_switch_upper = "poulailler/door/limit_switch_upper";
-static const char *topic_limit_switch_lower = "poulailler/door/limit_switch_lower";
-static const char *topic_button = "poulailler/button/state";
-static const char *topic_uptime = "poulailler/uptime";
-static const char *topic_last_event = "poulailler/door/last_event";
-static const char *topic_alert = "poulailler/alert";
-static const char *topic_firmware = "poulailler/firmware";
-static const char *topic_sunrise = "poulailler/sunrise";
-static const char *topic_sunset = "poulailler/sunset";
-static const char *topic_sunrise_offset = "poulailler/sunrise_offset";
-static const char *topic_sunset_offset = "poulailler/sunset_offset";
-static const char *topic_sunrise_offset_set = "poulailler/sunrise_offset/set";
-static const char *topic_sunset_offset_set = "poulailler/sunset_offset/set";
+static const char *topic_cmd = DEVICE_ID "/door/cmd";
+static const char *topic_status = DEVICE_ID "/status";
+static const char *topic_wifi = DEVICE_ID "/wifi/rssi";
+static const char *topic_uptime = DEVICE_ID "/uptime";
+static const char *topic_firmware = DEVICE_ID "/firmware";
+static const char *topic_sunrise = DEVICE_ID "/sunrise";
+static const char *topic_sunset = DEVICE_ID "/sunset";
+static const char *topic_sunrise_offset = DEVICE_ID "/sunrise_offset";
+static const char *topic_sunset_offset = DEVICE_ID "/sunset_offset";
+static const char *topic_sunrise_offset_set = DEVICE_ID "/sunrise_offset/set";
+static const char *topic_sunset_offset_set = DEVICE_ID "/sunset_offset/set";
 
 void MQTTManager::init() {
     mqttMutex = xSemaphoreCreateRecursiveMutex();
@@ -101,12 +96,16 @@ void MQTTManager::callback(char *topic, byte *payload, unsigned int length) {
         } else if (strcmp(value, "STOP") == 0) {
             DoorController::requestCommand(DoorCommand::Stop, true);
         }
-    } else if (strcmp(topic, topic_sunrise_offset_set) == 0) {
-        TimeManager::setSunriseOffset(atoi(value));
-        publishSettings();
-    } else if (strcmp(topic, topic_sunset_offset_set) == 0) {
-        TimeManager::setSunsetOffset(atoi(value));
-        publishSettings();
+    } else if (strcmp(topic, topic_sunrise_offset_set) == 0 || strcmp(topic, topic_sunset_offset_set) == 0) {
+        // Valeur vide ou non numérique ignorée : atoi() la lirait comme 0 et
+        // écraserait le réglage enregistré en NVS.
+        char *end;
+        long minutes = strtol(value, &end, 10);
+        if (end != value) {
+            if (strcmp(topic, topic_sunrise_offset_set) == 0) TimeManager::setSunriseOffset(minutes);
+            else TimeManager::setSunsetOffset(minutes);
+        }
+        publishSettings(); // Republie la valeur en vigueur, même si refusée
     }
 }
 
@@ -150,7 +149,8 @@ void MQTTManager::mqttTask(void *parameter) {
                 char buffer[16];
                 snprintf(buffer, sizeof(buffer), "%d", WiFi.RSSI());
                 mqttClient.publish(topic_wifi, buffer, true);
-                snprintf(buffer, sizeof(buffer), "%lu", millis() / 1000);
+                // Compteur 64 bits : millis() repasse par zéro tous les 49,7 jours
+                snprintf(buffer, sizeof(buffer), "%llu", (unsigned long long)(esp_timer_get_time() / 1000000));
                 mqttClient.publish(topic_uptime, buffer, true);
                 publishSettings();
                 lastPublish = millis();
@@ -176,85 +176,85 @@ static void publishDiscovery(const char *component, const char *objectId, const 
 // Publication des configurations Home Assistant Discovery.
 // Appelée depuis reconnect(), donc déjà sous mutex.
 void MQTTManager::publishHADiscovery() {
-    String device = String("\"identifiers\":[\"poulailler_esp32_001\"],\"name\":\"Poulailler ESP32\","
+    String device = String("\"identifiers\":[\"" DEVICE_ID "_esp32_001\"],\"name\":\"Poulailler ESP32\","
                            "\"manufacturer\":\"DIY\",\"model\":\"ESP32 Poulailler\",\"sw_version\":\"") +
                     FIRMWARE_VERSION + "\"";
     String suffix = String(",\"availability_topic\":\"") + topic_status + "\",\"device\":{" + device + "}}";
 
     // Le cover s'appuie sur poulailler/door/position (état réel des fins de course)
-    publishDiscovery("cover", "poulailler_door",
+    publishDiscovery("cover", DEVICE_ID "_door",
         String("{\"name\":\"Porte Poulailler\",\"state_topic\":\"") + topic_door_position +
         "\",\"command_topic\":\"" + topic_cmd +
         "\",\"payload_open\":\"OPEN\",\"payload_close\":\"CLOSE\",\"payload_stop\":\"STOP\","
         "\"state_open\":\"OPEN\",\"state_closed\":\"CLOSED\",\"state_opening\":\"OPENING\","
-        "\"state_closing\":\"CLOSING\",\"device_class\":\"garage\","
-        "\"unique_id\":\"poulailler_door_001\"" + suffix);
+        "\"state_closing\":\"CLOSING\",\"state_stopped\":\"UNKNOWN\",\"device_class\":\"garage\","
+        "\"unique_id\":\"" DEVICE_ID "_door_001\"" + suffix);
 
-    publishDiscovery("sensor", "poulailler_wifi_rssi",
+    publishDiscovery("sensor", DEVICE_ID "_wifi_rssi",
         String("{\"name\":\"Poulailler WiFi RSSI\",\"state_topic\":\"") + topic_wifi +
         "\",\"unit_of_measurement\":\"dBm\",\"device_class\":\"signal_strength\","
-        "\"entity_category\":\"diagnostic\",\"unique_id\":\"poulailler_wifi_rssi_001\"" + suffix);
+        "\"entity_category\":\"diagnostic\",\"unique_id\":\"" DEVICE_ID "_wifi_rssi_001\"" + suffix);
 
-    publishDiscovery("sensor", "poulailler_uptime",
+    publishDiscovery("sensor", DEVICE_ID "_uptime",
         String("{\"name\":\"Poulailler Uptime\",\"state_topic\":\"") + topic_uptime +
         "\",\"unit_of_measurement\":\"s\",\"entity_category\":\"diagnostic\","
-        "\"unique_id\":\"poulailler_uptime_001\"" + suffix);
+        "\"unique_id\":\"" DEVICE_ID "_uptime_001\"" + suffix);
 
-    publishDiscovery("sensor", "poulailler_firmware",
+    publishDiscovery("sensor", DEVICE_ID "_firmware",
         String("{\"name\":\"Poulailler Firmware\",\"state_topic\":\"") + topic_firmware +
-        "\",\"entity_category\":\"diagnostic\",\"unique_id\":\"poulailler_firmware_001\"" + suffix);
+        "\",\"entity_category\":\"diagnostic\",\"unique_id\":\"" DEVICE_ID "_firmware_001\"" + suffix);
 
-    publishDiscovery("sensor", "poulailler_door_position",
+    publishDiscovery("sensor", DEVICE_ID "_door_position",
         String("{\"name\":\"Poulailler Position Porte\",\"state_topic\":\"") + topic_door_position +
-        "\",\"unique_id\":\"poulailler_door_position_001\"" + suffix);
+        "\",\"unique_id\":\"" DEVICE_ID "_door_position_001\"" + suffix);
 
-    publishDiscovery("binary_sensor", "poulailler_limit_upper",
+    publishDiscovery("binary_sensor", DEVICE_ID "_limit_upper",
         String("{\"name\":\"Poulailler Fin de course haut\",\"state_topic\":\"") + topic_limit_switch_upper +
         "\",\"payload_on\":\"ON\",\"payload_off\":\"OFF\",\"device_class\":\"door\","
-        "\"unique_id\":\"poulailler_limit_upper_001\"" + suffix);
+        "\"unique_id\":\"" DEVICE_ID "_limit_upper_001\"" + suffix);
 
-    publishDiscovery("binary_sensor", "poulailler_limit_lower",
+    publishDiscovery("binary_sensor", DEVICE_ID "_limit_lower",
         String("{\"name\":\"Poulailler Fin de course bas\",\"state_topic\":\"") + topic_limit_switch_lower +
         "\",\"payload_on\":\"ON\",\"payload_off\":\"OFF\",\"device_class\":\"door\","
-        "\"unique_id\":\"poulailler_limit_lower_001\"" + suffix);
+        "\"unique_id\":\"" DEVICE_ID "_limit_lower_001\"" + suffix);
 
-    publishDiscovery("binary_sensor", "poulailler_button",
+    publishDiscovery("binary_sensor", DEVICE_ID "_button",
         String("{\"name\":\"Poulailler Bouton poussoir\",\"state_topic\":\"") + topic_button +
         "\",\"payload_on\":\"ON\",\"payload_off\":\"OFF\","
-        "\"unique_id\":\"poulailler_button_001\"" + suffix);
+        "\"unique_id\":\"" DEVICE_ID "_button_001\"" + suffix);
 
-    publishDiscovery("sensor", "poulailler_last_event",
+    publishDiscovery("sensor", DEVICE_ID "_last_event",
         String("{\"name\":\"Poulailler Dernier evenement\",\"state_topic\":\"") + topic_last_event +
-        "\",\"unique_id\":\"poulailler_last_event_001\"" + suffix);
+        "\",\"unique_id\":\"" DEVICE_ID "_last_event_001\"" + suffix);
 
-    publishDiscovery("sensor", "poulailler_alert",
+    publishDiscovery("sensor", DEVICE_ID "_alert",
         String("{\"name\":\"Poulailler Alerte\",\"state_topic\":\"") + topic_alert +
-        "\",\"unique_id\":\"poulailler_alert_001\"" + suffix);
+        "\",\"unique_id\":\"" DEVICE_ID "_alert_001\"" + suffix);
 
-    publishDiscovery("sensor", "poulailler_sunrise",
+    publishDiscovery("sensor", DEVICE_ID "_sunrise",
         String("{\"name\":\"Poulailler Heure d'ouverture\",\"state_topic\":\"") + topic_sunrise +
-        "\",\"icon\":\"mdi:weather-sunset-up\",\"unique_id\":\"poulailler_sunrise_001\"" + suffix);
+        "\",\"icon\":\"mdi:weather-sunset-up\",\"unique_id\":\"" DEVICE_ID "_sunrise_001\"" + suffix);
 
-    publishDiscovery("sensor", "poulailler_sunset",
+    publishDiscovery("sensor", DEVICE_ID "_sunset",
         String("{\"name\":\"Poulailler Heure de fermeture\",\"state_topic\":\"") + topic_sunset +
-        "\",\"icon\":\"mdi:weather-sunset-down\",\"unique_id\":\"poulailler_sunset_001\"" + suffix);
+        "\",\"icon\":\"mdi:weather-sunset-down\",\"unique_id\":\"" DEVICE_ID "_sunset_001\"" + suffix);
 
     // Temporisations réglables depuis Home Assistant, conservées en NVS
-    publishDiscovery("number", "poulailler_sunrise_offset",
+    publishDiscovery("number", DEVICE_ID "_sunrise_offset",
         String("{\"name\":\"Poulailler Decalage ouverture\",\"state_topic\":\"") + topic_sunrise_offset +
         "\",\"command_topic\":\"" + topic_sunrise_offset_set +
         "\",\"min\":" + TIME_OFFSET_MIN + ",\"max\":" + TIME_OFFSET_MAX +
         ",\"step\":5,\"unit_of_measurement\":\"min\",\"mode\":\"box\","
         "\"entity_category\":\"config\",\"icon\":\"mdi:timer-outline\","
-        "\"unique_id\":\"poulailler_sunrise_offset_001\"" + suffix);
+        "\"unique_id\":\"" DEVICE_ID "_sunrise_offset_001\"" + suffix);
 
-    publishDiscovery("number", "poulailler_sunset_offset",
+    publishDiscovery("number", DEVICE_ID "_sunset_offset",
         String("{\"name\":\"Poulailler Decalage fermeture\",\"state_topic\":\"") + topic_sunset_offset +
         "\",\"command_topic\":\"" + topic_sunset_offset_set +
         "\",\"min\":" + TIME_OFFSET_MIN + ",\"max\":" + TIME_OFFSET_MAX +
         ",\"step\":5,\"unit_of_measurement\":\"min\",\"mode\":\"box\","
         "\"entity_category\":\"config\",\"icon\":\"mdi:timer-outline\","
-        "\"unique_id\":\"poulailler_sunset_offset_001\"" + suffix);
+        "\"unique_id\":\"" DEVICE_ID "_sunset_offset_001\"" + suffix);
 }
 
 // --- Publication des réglages et horaires effectifs ---
@@ -281,21 +281,7 @@ void MQTTManager::publishSettings() {
     xSemaphoreGiveRecursive(mqttMutex);
 }
 
-void MQTTManager::publishTopic(const char *logicalTopic, const char *value) {
-    const char *topic = nullptr;
-    if (strcmp(logicalTopic, "topic_limit_switch_upper") == 0) topic = topic_limit_switch_upper;
-    else if (strcmp(logicalTopic, "topic_limit_switch_lower") == 0) topic = topic_limit_switch_lower;
-    else if (strcmp(logicalTopic, "topic_door_position") == 0) topic = topic_door_position;
-    else if (strcmp(logicalTopic, "topic_last_event") == 0) topic = topic_last_event;
-    else if (strcmp(logicalTopic, "topic_button") == 0) topic = topic_button;
-    else if (strcmp(logicalTopic, "topic_alert") == 0) topic = topic_alert;
-
-    if (topic == nullptr) {
-        // Ne pas retomber sur le nom logique : cela publierait sur un topic
-        // littéral « topic_xxx » et masquerait la faute de frappe.
-        Serial.printf("Topic logique inconnu : %s\n", logicalTopic);
-        return;
-    }
+void MQTTManager::publishTopic(const char *topic, const char *value) {
     if (mqttMutex == nullptr) return;
 
     // Attente courte : cette fonction est appelée depuis la boucle de sécurité
