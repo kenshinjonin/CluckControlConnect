@@ -23,7 +23,7 @@
 // Version du firmware : publiée au démarrage sur le port série, exposée dans
 // Home Assistant (sw_version de l'appareil + capteur de diagnostic) et affichée
 // dans l'interface web. À incrémenter à chaque mise à jour OTA.
-#define FIRMWARE_VERSION "2.1.0"
+#define FIRMWARE_VERSION "2.2.0"
 
 // Identifiant de l'appareil : préfixe des topics MQTT et des identifiants Home
 // Assistant (lettres minuscules, chiffres et _ uniquement). La valeur par défaut
