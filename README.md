@@ -26,7 +26,7 @@ CluckControl Connect is an open source home automation system for automated chic
   - the automation freezes rather than acting on a bogus time if the RTC is missing or returns an implausible date;
   - task watchdog (`esp_task_wdt`, 30 s): automatic reboot if a critical task freezes.
 - **Full MQTT integration**: states, commands, Last Will Testament (`poulailler/status` online/offline), Home Assistant Discovery for all entities (door cover with real position, limit switches, button, RSSI, uptime, firmware version, effective opening/closing times, offsets, last event, alerts).
-- **Secured web interface**: HTTP Basic authentication, failed-attempt limiting that never locks out valid credentials, anti-CSRF protection on door commands, protected OTA updates (ElegantOTA).
+- **Secured web interface**: HTTP Basic authentication, per-IP failed-attempt limiting (an attacker only locks out their own address), anti-CSRF protection on door commands and OTA updates.
 - **Resilience**: the local automation keeps working even if WiFi or the MQTT broker is unreachable (non-blocking reconnections, full state republish once the broker is back).
 
 ## Required Hardware
@@ -87,7 +87,7 @@ CluckControl Connect is an open source home automation system for automated chic
 - Automatic integration into Home Assistant via MQTT Discovery
 - MQTT commands on `poulailler/door/cmd`: `OPEN`, `CLOSE`, `STOP`
 - Sunrise/sunset offsets in minutes on `poulailler/sunrise_offset/set` and `poulailler/sunset_offset/set` (also exposed as *number* entities in Home Assistant)
-- OTA updates via `/update` (protected by the same credentials). Remember to bump `FIRMWARE_VERSION` in `include/config.h` — it is reported in the *Firmware* sensor and in the device info panel.
+- OTA updates via `/update` (same credentials and anti-CSRF checks as door commands; the door is stopped before the reboot). Remember to bump `FIRMWARE_VERSION` in `include/config.h` — it is reported in the *Firmware* sensor and in the device info panel.
 
 ## Home Assistant: "door not closed after sunset" alert
 
@@ -175,7 +175,7 @@ CluckControl Connect est un système domotique open source pour la gestion autom
   - l'automatisme se fige plutôt que d'agir sur une heure fantaisiste si la RTC est absente ou renvoie une date invraisemblable ;
   - watchdog de tâches (`esp_task_wdt`, 30 s) : reboot automatique si une tâche critique se fige.
 - **Intégration MQTT complète** : états, commandes, Last Will Testament (`poulailler/status` online/offline), Home Assistant Discovery pour toutes les entités (cover de porte avec position réelle, fins de course, bouton, RSSI, uptime, version du firmware, horaires effectifs d'ouverture/fermeture, décalages, dernier événement, alertes).
-- **Interface web sécurisée** : authentification HTTP Basic, limitation des tentatives qui ne verrouille jamais des identifiants valides, protection anti-CSRF sur les commandes de porte, mises à jour OTA protégées (ElegantOTA).
+- **Interface web sécurisée** : authentification HTTP Basic, limitation des tentatives par adresse IP (un attaquant ne verrouille que sa propre adresse), protection anti-CSRF sur les commandes de porte et sur les mises à jour OTA.
 - **Résilience** : l'automatisme local continue de fonctionner même si le WiFi ou le broker MQTT est injoignable (reconnexions non bloquantes, republication complète des états au retour du broker).
 
 ## Matériel nécessaire
@@ -236,7 +236,7 @@ CluckControl Connect est un système domotique open source pour la gestion autom
 - Intégration automatique dans Home Assistant via MQTT Discovery
 - Commandes MQTT sur `poulailler/door/cmd` : `OPEN`, `CLOSE`, `STOP`
 - Décalages lever/coucher en minutes sur `poulailler/sunrise_offset/set` et `poulailler/sunset_offset/set` (également exposés comme entités *number* dans Home Assistant)
-- Mises à jour OTA via `/update` (protégées par les mêmes identifiants). Pensez à incrémenter `FIRMWARE_VERSION` dans `include/config.h` : la valeur est remontée dans le capteur *Firmware* et dans la fiche de l'appareil.
+- Mises à jour OTA via `/update` (mêmes identifiants et même protection anti-CSRF que les commandes ; la porte est arrêtée avant le redémarrage). Pensez à incrémenter `FIRMWARE_VERSION` dans `include/config.h` : la valeur est remontée dans le capteur *Firmware* et dans la fiche de l'appareil.
 
 ## Home Assistant : alerte « porte non fermée après le coucher »
 

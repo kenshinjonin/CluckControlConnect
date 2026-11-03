@@ -124,6 +124,10 @@ void MQTTManager::reconnect() {
                            topic_status, 0, true, "offline")) {
         Serial.println("Connecte au broker MQTT");
         mqttClient.publish(topic_status, "online", true);
+        // Un message vide retenu efface toute commande retenue par le broker :
+        // sinon un OPEN publié un jour avec retain serait rejoué à chaque
+        // reconnexion, porte ouverte en pleine nuit après une coupure WiFi.
+        mqttClient.publish(topic_cmd, "", true);
         mqttClient.subscribe(topic_cmd);
         mqttClient.subscribe(topic_sunrise_offset_set);
         mqttClient.subscribe(topic_sunset_offset_set);

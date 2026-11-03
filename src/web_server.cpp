@@ -5,10 +5,10 @@
  * web_server.cpp
  * --------------
  * Gère l'interface web embarquée du système :
- *   - Authentification HTTP basique avec limitation des tentatives
- *   - Protection anti-CSRF des commandes de la porte
+ *   - Authentification HTTP basique avec limitation des tentatives par IP
+ *   - Protection anti-CSRF des commandes de la porte et de la mise à jour
  *   - Définition des routes (page principale, API JSON, commandes)
- *   - Intégration ElegantOTA (protégée par la même authentification)
+ *   - Mise à jour OTA (/update), soumise aux mêmes contrôles que les commandes
  *   - Publication d'informations système (état, position, RSSI, version, etc.)
  *
  * La page HTML est servie depuis la mémoire programme et le JSON est construit
@@ -18,7 +18,7 @@
  */
 
 #include "web_server.h"
-#include <ElegantOTA.h>
+#include <Update.h>
 #include <esp_task_wdt.h>
 #include <WiFi.h>
 #include <WebServer.h>
@@ -28,45 +28,32 @@
 #include "door_controller.h"
 #include "time_manager.h"
 #include "config.h"
+#include "login_guard.h"
 
 namespace {
 // --- Paramètres d'authentification ---
 const char *www_username = SECRET_WEB_USER;
 const char *www_password = SECRET_WEB_PASS;
-const int MAX_LOGIN_ATTEMPTS = 5;
-const unsigned long LOGIN_ATTEMPTS_RESET_MS = 5 * 60 * 1000; // Expiration du compteur d'échecs
-int loginAttempts = 0;
-unsigned long lastFailedAttemptTimestamp = 0;
 
 // En-tête que seule notre propre page peut poser
 const char *CSRF_HEADER = "X-Coop-Request";
 
 // --- Vérification de l'authentification HTTP basique ---
 bool isAuthenticated(WebServer &server) {
-    // Les identifiants valides passent en toutes circonstances. Compter les
-    // échecs avant de vérifier le mot de passe permettrait à n'importe qui sur
-    // le réseau local de verrouiller l'utilisateur légitime en cinq requêtes.
-    if (server.authenticate(www_username, www_password)) {
-        loginAttempts = 0;
-        return true;
+    uint32_t ip = server.client().remoteIP();
+    if (LoginGuard::isLocked(ip, millis())) {
+        server.send(429, "text/plain", "Trop de tentatives. Reessayez dans quelques minutes.");
+        return false;
     }
-
-    // Le compteur d'échecs expire : pas de verrouillage définitif jusqu'au reboot
-    if (loginAttempts > 0 && millis() - lastFailedAttemptTimestamp > LOGIN_ATTEMPTS_RESET_MS) {
-        loginAttempts = 0;
+    if (server.authenticate(www_username, www_password)) {
+        LoginGuard::clear(ip, millis());
+        return true;
     }
     // Ne compter que les requêtes portant des identifiants (mauvais mot de passe) :
     // la première requête d'un navigateur n'a pas encore de header Authorization
     if (server.hasHeader("Authorization")) {
-        loginAttempts++;
-        lastFailedAttemptTimestamp = millis();
+        LoginGuard::recordFailure(ip, millis());
     }
-
-    if (loginAttempts >= MAX_LOGIN_ATTEMPTS) {
-        server.send(429, "text/plain", "Trop de tentatives. Reessayez dans quelques minutes.");
-        return false;
-    }
-
     server.requestAuthentication();
     return false;
 }
@@ -144,6 +131,43 @@ setInterval(refresh,2000); refresh();
 </script>
 </body></html>
 )rawliteral";
+
+// --- Page de mise à jour OTA ---
+// L'envoi passe par XMLHttpRequest pour poser l'en-tête anti-CSRF (un
+// formulaire classique ne le peut pas) et afficher la progression.
+const char OTA_HTML[] PROGMEM = R"rawliteral(
+<!DOCTYPE html><html lang='fr'><head>
+<meta charset='utf-8'><meta name='viewport' content='width=device-width, initial-scale=1'>
+<title>Poulailler - Mise a jour</title>
+<style>body{font-family:sans-serif;margin:16px;color:#222}button{padding:10px 20px;font-size:16px}</style>
+</head><body>
+<h1>Mise a jour du firmware</h1>
+<p><input type='file' id='file' accept='.bin'></p>
+<p><button onclick='send()'>Envoyer</button></p>
+<p><progress id='bar' max='100' value='0'></progress> <span id='msg'></span></p>
+<p><a href='/'>Retour</a></p>
+<script>
+function send(){
+  const f=document.getElementById('file').files[0];
+  if(!f)return;
+  const msg=document.getElementById('msg'), data=new FormData();
+  data.append('firmware',f);
+  const x=new XMLHttpRequest();
+  x.open('POST','/update');
+  x.setRequestHeader('X-Coop-Request','1');
+  x.upload.onprogress=e=>{document.getElementById('bar').value=e.loaded*100/e.total;};
+  x.onload=()=>{msg.textContent=x.status==200?'OK, redemarrage...':'Echec : '+x.responseText;};
+  x.onerror=()=>{msg.textContent='Echec reseau';};
+  msg.textContent='Envoi...';
+  x.send(data);
+}
+</script>
+</body></html>
+)rawliteral";
+
+// Vrai si l'envoi en cours a passé les contrôles : l'en-tête de la requête
+// est vérifié au premier morceau, les suivants sont jetés sinon.
+bool otaAllowed = false;
 } // namespace
 
 WebServer WebServerManager::server(80);
@@ -155,8 +179,6 @@ void WebServerManager::init() {
     server.collectHeaders(headerKeys, 2);
 
     setupRoutes();
-    ElegantOTA.begin(&server);
-    ElegantOTA.setAuth(www_username, www_password); // Protège /update (UI et upload OTA)
     server.begin();
 }
 
@@ -169,7 +191,6 @@ void WebServerManager::init() {
 void WebServerManager::webServerTask(void *parameter) {
     for (;;) {
         server.handleClient();
-        ElegantOTA.loop(); // Requis par ElegantOTA v3 (finalise le reboot post-mise à jour)
         vTaskDelay(pdMS_TO_TICKS(2));
     }
 }
@@ -180,8 +201,6 @@ void WebServerManager::setupRoutes() {
         if (!isAuthenticated(server)) return;
         server.send_P(200, "text/html", INDEX_HTML);
     });
-
-    // Note : /update est servi par ElegantOTA (protégé via ElegantOTA.setAuth)
 
     server.on("/api/status", HTTP_GET, []() {
         if (!isAuthenticated(server)) return;
@@ -232,5 +251,61 @@ void WebServerManager::setupRoutes() {
             else if (action == "STOP") DoorController::requestCommand(DoorCommand::Stop, true);
         }
         server.send(204);
+    });
+
+    server.on("/update", HTTP_GET, []() {
+        if (!isAuthenticated(server)) return;
+        server.send_P(200, "text/html", OTA_HTML);
+    });
+
+    // Le corps est traité morceau par morceau (second gestionnaire) avant
+    // l'appel du premier : les contrôles sont donc faits dès le début de
+    // l'envoi, puis répétés à la fin pour produire la réponse et compter un
+    // éventuel mauvais mot de passe.
+    server.on("/update", HTTP_POST, []() {
+        if (!isAuthenticated(server)) return;
+        if (!isTrustedRequest(server)) {
+            server.send(403, "text/plain", "Requete refusee");
+            return;
+        }
+        // isFinished() plutôt que !hasError() : une requête sans fichier, après
+        // un envoi interrompu, ne doit pas déclencher de redémarrage.
+        if (!otaAllowed || !Update.isFinished()) {
+            server.send(500, "text/plain", Update.errorString());
+            return;
+        }
+        server.sendHeader("Connection", "close");
+        server.send(200, "text/plain", "OK");
+        // Porte arrêtée avant le redémarrage : un reset en mouvement laisserait
+        // le moteur sans surveillance le temps du démarrage.
+        DoorController::requestCommand(DoorCommand::Stop, true);
+        vTaskDelay(pdMS_TO_TICKS(1000));
+        ESP.restart();
+    }, []() {
+        HTTPUpload &upload = server.upload();
+        if (upload.status == UPLOAD_FILE_START) {
+            otaAllowed = !LoginGuard::isLocked(server.client().remoteIP(), millis()) &&
+                         server.authenticate(www_username, www_password) &&
+                         isTrustedRequest(server);
+            if (otaAllowed && !Update.begin(UPDATE_SIZE_UNKNOWN)) {
+                Serial.printf("OTA refusee : %s\n", Update.errorString());
+                otaAllowed = false;
+            }
+        } else if (!otaAllowed) {
+            return;
+        } else if (upload.status == UPLOAD_FILE_WRITE) {
+            if (Update.write(upload.buf, upload.currentSize) != upload.currentSize) {
+                Serial.printf("OTA erreur d'ecriture : %s\n", Update.errorString());
+            }
+        } else if (upload.status == UPLOAD_FILE_END) {
+            // true : accepte une taille inconnue à l'avance, vérifie l'image
+            if (Update.end(true)) {
+                Serial.printf("OTA terminee : %u octets\n", upload.totalSize);
+            } else {
+                Serial.printf("OTA echouee : %s\n", Update.errorString());
+            }
+        } else if (upload.status == UPLOAD_FILE_ABORTED) {
+            Update.abort();
+        }
     });
 }

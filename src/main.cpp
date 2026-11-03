@@ -30,10 +30,13 @@ void setup() {
     esp_task_wdt_init(WATCHDOG_TIMEOUT_S, true);
 
     // --- Initialisation des modules principaux ---
+    // La porte d'abord : la connexion WiFi peut attendre 10 s, pendant lesquelles
+    // les entrées du pont en H flotteraient (GPIO14/IN2 est tiré au niveau haut
+    // au reset). Ses publications MQTT sont ignorées tant que MQTT n'existe pas.
+    DoorController::init();           // Contrôleur de porte (met le moteur à l'arrêt)
     WiFiManager::connect();           // Connexion au réseau WiFi
     TimeManager::init();              // Gestion du temps (NVS, RTC/NTP, éphémérides)
-    MQTTManager::init();              // Client MQTT (avant la porte : crée le mutex de publication)
-    DoorController::init();           // Contrôleur de porte (met le moteur à l'arrêt)
+    MQTTManager::init();              // Client MQTT
     WebServerManager::init();         // Démarrage du serveur web
 
     // --- Création des tâches FreeRTOS ---
