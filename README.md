@@ -88,6 +88,7 @@ CluckControl Connect is an open source home automation system for automated chic
 - MQTT commands on `poulailler/door/cmd`: `OPEN`, `CLOSE`, `STOP`
 - Sunrise/sunset offsets in minutes on `poulailler/sunrise_offset/set` and `poulailler/sunset_offset/set` (also exposed as *number* entities in Home Assistant)
 - OTA updates via `/update` (same credentials and anti-CSRF checks as door commands; the door is stopped before the reboot). Remember to bump `FIRMWARE_VERSION` in `include/config.h` — it is reported in the *Firmware* sensor and in the device info panel.
+- Unit tests of the pure logic (day/night decision, login lockout) run on the PC, no ESP32 needed: `pio test -e native`.
 
 ## Home Assistant: "door not closed after sunset" alert
 
@@ -237,6 +238,7 @@ CluckControl Connect est un système domotique open source pour la gestion autom
 - Commandes MQTT sur `poulailler/door/cmd` : `OPEN`, `CLOSE`, `STOP`
 - Décalages lever/coucher en minutes sur `poulailler/sunrise_offset/set` et `poulailler/sunset_offset/set` (également exposés comme entités *number* dans Home Assistant)
 - Mises à jour OTA via `/update` (mêmes identifiants et même protection anti-CSRF que les commandes ; la porte est arrêtée avant le redémarrage). Pensez à incrémenter `FIRMWARE_VERSION` dans `include/config.h` : la valeur est remontée dans le capteur *Firmware* et dans la fiche de l'appareil.
+- Tests unitaires de la logique pure (décision jour/nuit, blocage des mots de passe), sur PC sans ESP32 : `pio test -e native`.
 
 ## Home Assistant : alerte « porte non fermée après le coucher »
 

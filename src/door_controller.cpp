@@ -15,6 +15,7 @@
 #include "door_controller.h"
 #include "config.h"
 #include "task_utils.h"
+#include "daytime.h"
 #include <Arduino.h>
 #include "time_manager.h"
 #include "mqtt_manager.h"
@@ -154,7 +155,13 @@ void DoorController::applyDeadTime() {
 
 // --- Commande d'ouverture de la porte ---
 void DoorController::open() {
-    if (isDoorMoving || limitSwitchFault) return;
+    if (limitSwitchFault) return;
+    if (isDoorMoving) {
+        if (previousDoorDirectionUp) return; // Déjà en ouverture
+        stop(); // Inversion demandée : le temps mort s'applique ci-dessous
+    }
+    // Déjà ouverte : démarrer ferait forcer le moteur contre la butée un cycle
+    if (digitalRead(config.upperLimitSwitchPinNumber) == LOW) return;
     applyDeadTime();
     digitalWrite(config.motorInput1PinNumber, HIGH);
     digitalWrite(config.motorInput2PinNumber, LOW);
@@ -168,7 +175,12 @@ void DoorController::open() {
 
 // --- Commande de fermeture de la porte ---
 void DoorController::close() {
-    if (isDoorMoving || limitSwitchFault) return;
+    if (limitSwitchFault) return;
+    if (isDoorMoving) {
+        if (!previousDoorDirectionUp) return; // Déjà en fermeture
+        stop(); // Inversion demandée : le temps mort s'applique ci-dessous
+    }
+    if (digitalRead(config.lowerLimitSwitchPinNumber) == LOW) return; // Déjà fermée
     applyDeadTime();
     digitalWrite(config.motorInput1PinNumber, LOW);
     digitalWrite(config.motorInput2PinNumber, HIGH);
@@ -345,11 +357,7 @@ void DoorController::doorScheduleTask(void *parameter) {
         // Horaires indisponibles (RTC absente, date ou éphémérides invalides) :
         // l'automatisme reste gelé plutôt que d'agir sur une heure fantaisiste.
         if (sunriseTime >= 0 && sunsetTime >= 0 && currentTime >= 0) {
-            // Les décalages configurables peuvent faire passer la fermeture après
-            // minuit : la comparaison doit alors être traitée en intervalle circulaire.
-            bool daytime = (sunsetTime > sunriseTime)
-                               ? (currentTime >= sunriseTime && currentTime < sunsetTime)
-                               : (currentTime >= sunriseTime || currentTime < sunsetTime);
+            bool daytime = isDaytime(sunriseTime, sunsetTime, currentTime);
 
             if (!daytimeInitialized) {
                 lastDaytime = daytime;
